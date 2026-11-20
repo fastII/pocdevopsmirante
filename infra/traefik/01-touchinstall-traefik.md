@@ -168,3 +168,51 @@ BACKUP DOS CRD'S
 
   kubectl apply --server-side \
   -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/experimental-install.yaml
+
+
+  ## EXPOR O TRAEFIK COMO LOADBALANCE PARA ACESSO EXTERNO ##
+
+  2. Por que não utilizar minikube tunnel?
+O comando:
+minikube tunnel
+
+
+Tem como objetivo disponibilizar Services do tipo LoadBalancer, criando os encaminhamentos e as rotas necessárias para acessá-los a partir do host.
+
+No seu ambiente, ele anunciou:
+EXTERNAL-IP: 127.0.0.1
+
+
+Entretanto, o Traefik utiliza as portas 80 e 443, que são privilegiadas no macOS.
+
+O próprio Minikube informou:
+The service/ingress traefik requires privileged ports
+to be exposed: [80 443]
+sudo permission will be asked for it.
+
+
+Como seu usuário corporativo não pertence ao grupo autorizado para sudo, o túnel não conseguiu disponibilizar essas portas.
+
+Consequência: o Gateway anunciava 127.0.0.1, mas as conexões para https://127.0.0.1:443 falhavam.
+3. Encerrar o túnel anterior
+Se o minikube tunnel estiver aberto em outro terminal, encerre-o com Ctrl+C.
+
+Verifique:
+ps aux | grep '[m]inikube tunnel'
+
+
+Se não retornar processos, o túnel foi encerrado.
+
+Não é necessário remover o Service LoadBalancer, modificar o Helm ou alterar o Gateway.
+4. Expor o Traefik utilizando minikube service
+Execute:
+minikube service traefik -n traefik --url
+
+
+Exemplo de saída do seu ambiente:
+http://127.0.0.1:62902
+http://127.0.0.1:62905
+
+https://harbor.localhost:62905
+https://argocd.localhost:62905
+https://sonarqube.localhost:62905
