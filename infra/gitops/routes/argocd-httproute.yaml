@@ -10,6 +10,7 @@ spec:
     sectionName: websecure
   hostnames:
   - argocd.local
+  - argocd.localhost # ADICIONADO: acesso pelo navegador no macOS sem /etc/hosts
   rules:
   - matches:
     - path:

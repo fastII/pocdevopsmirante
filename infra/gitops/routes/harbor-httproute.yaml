@@ -10,6 +10,7 @@ spec:
     sectionName: websecure
   hostnames:
   - harbor.local
+  - harbor.localhost # ADICIONADO
   rules:
   - matches:
     - path:

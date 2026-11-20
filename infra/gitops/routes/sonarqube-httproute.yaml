@@ -10,6 +10,7 @@ spec:
     sectionName: websecure
   hostnames:
   - sonarqube.local
+  - sonarqube.localhost # ADICIONADO
   rules:
   - matches:
     - path:
