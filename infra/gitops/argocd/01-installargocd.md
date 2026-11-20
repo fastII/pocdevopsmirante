@@ -22,6 +22,14 @@ helm upgrade --install argocd argo/argo-cd \
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 
 
+helm upgrade argocd argo/argo-cd \
+  -n argocd \
+  --reuse-values \
+  -f argocd-resources.yaml \
+  --version "$(helm list -n argocd -o json | jq -r '.[] | select(.name=="argocd") | .chart | sub("^argo-cd-"; "")')" \
+  --wait \
+  --timeout 10m
+
 ### ERRO ENCONTRADO ##
 
 Problema restrição project: default no Secret do repositório. Como Harbor e SonarQube pertencem a outros AppProjects, o Argo CD não conseguia utilizar a credencial.
