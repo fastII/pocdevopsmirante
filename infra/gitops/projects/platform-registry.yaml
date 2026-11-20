@@ -1,0 +1,21 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-registry
+  namespace: argocd
+spec:
+  description: Harbor Container Registry
+
+  sourceRepos:
+    - https://helm.goharbor.io
+    - https://github.com/fastII/pocdevopsmirante.git
+
+  destinations:
+    - namespace: harbor
+      server: https://kubernetes.default.svc
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+

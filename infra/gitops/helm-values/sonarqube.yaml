@@ -1,0 +1,44 @@
+
+# SonarQube Community Build
+community:
+  enabled: true
+
+# PostgreSQL integrado ao chart
+postgresql:
+  enabled: true
+
+  auth:
+    username: sonar
+    database: sonarqube
+    existingSecret: sonarqube-postgresql
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+
+  persistence:
+    enabled: true
+    storageClass: standard
+    accessMode: ReadWriteOnce
+    size: 10Gi
+
+# Persistência do SonarQube
+persistence:
+  enabled: true
+  storageClass: standard
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - name: sonarqube.local
+      path: /
+  tls: []
+
+monitoringPasscodeSecretName: sonarqube-monitoring
+monitoringPasscodeSecretKey: monitoringPasscode
+

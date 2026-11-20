@@ -1,0 +1,30 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+spec:
+  project: platform-registry
+
+  sources:
+    - repoURL: https://helm.goharbor.io
+      chart: harbor
+      targetRevision: "1.19.4"
+      helm:
+        releaseName: harbor
+        valueFiles:
+          - $values/infra/gitops/helm-values/harbor.yaml
+
+    - repoURL: https://github.com/fastII/pocdevopsmirante.git
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+

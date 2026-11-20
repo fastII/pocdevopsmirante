@@ -1,0 +1,37 @@
+database:
+  type: internal
+
+expose:
+  type: clusterIP
+  tls:
+    enabled: false
+  clusterIP:
+    name: harbor
+    ports:
+      httpPort: 80
+
+externalURL: https://harbor.local
+
+existingSecretAdminPassword: harbor-admin
+existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+
+persistence:
+  enabled: true
+  persistentVolumeClaim:
+    database:
+      size: 2Gi
+    jobservice:
+      jobLog:
+        size: 1Gi
+    redis:
+      size: 1Gi
+    registry:
+      size: 10Gi
+    trivy:
+      size: 2Gi
+
+redis:
+  type: internal
+
+trivy:
+  enabled: true

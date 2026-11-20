@@ -1,0 +1,25 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-networking
+  namespace: argocd
+spec:
+  description: Traefik Gateway API
+
+  sourceRepos:
+    - https://traefik.github.io/charts
+    - https://github.com/fastII/pocdevopsmirante.git
+
+  destinations:
+    - namespace: traefik
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: gateway.networking.k8s.io
+      kind: GatewayClass
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+

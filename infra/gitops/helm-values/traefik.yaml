@@ -1,0 +1,71 @@
+accessLog:
+  enabled: true
+api:
+  dashboard: true
+  insecure: false
+extraObjects:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: dashboard-auth-secret
+  stringData:
+    password: P@ssw0rd
+    username: admin
+  type: kubernetes.io/basic-auth
+- apiVersion: traefik.io/v1alpha1
+  kind: Middleware
+  metadata:
+    name: dashboard-auth
+  spec:
+    basicAuth:
+      secret: dashboard-auth-secret
+gateway:
+  listeners:
+    web:
+      namespacePolicy:
+        from: All
+      port: 80
+      protocol: HTTP
+    websecure:
+      certificateRefs:
+      - group: ""
+        kind: Secret
+        name: local-selfsigned-tls
+      mode: Terminate
+      namespacePolicy:
+        from: All
+      port: 443
+      protocol: HTTPS
+ingressClass:
+  enabled: false
+ingressRoute:
+  dashboard:
+    enabled: true
+    entryPoints:
+    - websecure
+    matchRule: Host(`dashboard.docker.localhost`)
+    middlewares:
+    - name: dashboard-auth
+log:
+  level: INFO
+metrics:
+  prometheus:
+    enabled: true
+ports:
+  web:
+    http:
+      redirections:
+        entryPoint:
+          permanent: true
+          scheme: https
+          to: websecure
+    nodePort: 30000
+    port: 80
+  websecure:
+    nodePort: 30001
+    port: 443
+providers:
+  kubernetesGateway:
+    enabled: true
+  kubernetesIngress:
+    enabled: false

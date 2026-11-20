@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-quality
+  namespace: argocd
+spec:
+  description: SonarQube Code Quality
+
+  sourceRepos:
+    - https://SonarSource.github.io/helm-chart-sonarqube
+    - https://github.com/fastII/pocdevopsmirante.git
+
+  destinations:
+    - namespace: sonarqube
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
