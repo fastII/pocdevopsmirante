@@ -1,9 +1,17 @@
 accessLog:
   enabled: true
+
 api:
   dashboard: true
   insecure: false
+
+# ADICIONADO: rejeita headers ambíguos que podem
+# permitir spoofing de cabeçalhos em aplicações backend.
+global:
+  aliasHeadersStrategy: reject
+
 gateway:
+  enabled: true
   listeners:
     web:
       namespacePolicy:
@@ -12,30 +20,34 @@ gateway:
       protocol: HTTP
     websecure:
       certificateRefs:
-      - group: ''
-        kind: Secret
-        name: local-selfsigned-tls
+        - group: ''
+          kind: Secret
+          name: local-selfsigned-tls
       mode: Terminate
       namespacePolicy:
         from: All
       port: 443
       protocol: HTTPS
-  enabled: true
+
 ingressClass:
   enabled: false
+
 ingressRoute:
   dashboard:
     enabled: false
     entryPoints:
-    - websecure
+      - websecure
     matchRule: Host(`dashboard.docker.localhost`)
     middlewares:
-    - name: dashboard-auth
+      - name: dashboard-auth
+
 log:
   level: INFO
+
 metrics:
   prometheus:
     enabled: true
+
 ports:
   web:
     http:
@@ -46,18 +58,29 @@ ports:
           to: websecure
     nodePort: 30000
     port: 80
+
   websecure:
     nodePort: 30001
     port: 443
+
 providers:
+  # ADICIONADO: configura o provider Kubernetes CRD
+  # e evita colisões de nomes entre recursos gerados.
+  kubernetesCRD:
+    enabled: true
+    safeNaming: true
+
   kubernetesGateway:
     enabled: true
-    experimentalChannel: false 
+    experimentalChannel: false
+
   kubernetesIngress:
     enabled: false
+
 gatewayClass:
   enabled: true
   name: traefik
+
 resources:
   requests:
     cpu: 100m
