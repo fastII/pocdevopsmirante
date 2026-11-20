@@ -20,3 +20,19 @@ helm upgrade --install argocd argo/argo-cd \
 
 
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+
+
+### ERRO ENCONTRADO ##
+
+Problema restrição project: default no Secret do repositório. Como Harbor e SonarQube pertencem a outros AppProjects, o Argo CD não conseguia utilizar a credencial.
+
+Depois de remover essa restrição, as Applications passaram de Unknown para OutOfSync. Isso indica que o Argo CD voltou a conseguir comparar os manifestos do Git com os recursos do cluster.
+Estado atual
+Application	Sync	Health	Interpretação
+platform-root	Synced	Healthy	Funcionando
+harbor	OutOfSync	Healthy	Recursos saudáveis, mas diferentes do Git
+sonarqube	OutOfSync	Missing	Recursos esperados ainda não encontrados
+traefik	OutOfSync	Progressing	Recursos ainda não totalmente saudáveis
+
+Próximo passo: sincronização manual
+Como mantivemos o Auto Sync desabilitado nas três Applications, OutOfSync é esperado até executarmos o Sync manual.

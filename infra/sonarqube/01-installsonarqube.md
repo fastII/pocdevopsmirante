@@ -126,6 +126,10 @@ k create namespace sonarqube \
 
 4) CRIACAO SECRETS
 
+k create secret generic sonarqube-monitoring \
+  -n sonarqube \
+  --from-literal=monitoringPasscode=admin
+
 k create secret generic sonarqube-postgresql \
   -n sonarqube \
   --from-literal=password=admin \
