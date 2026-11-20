@@ -1,0 +1,34 @@
+# ADAPTADO: altere para a organizacao ou repositorio que instalou o GitHub App.
+githubConfigUrl: https://github.com/bs2-bet
+# Secret nativo Kubernetes (criado via kubectl, NAO versionar a chave privada).
+githubConfigSecret: arc-github-app
+runnerScaleSetName: arc-bs2bet
+
+# ADAPTADO: escala conservadora para POC no Minikube.
+minRunners: 0
+maxRunners: 2
+
+# PRESERVADO: ServiceAccount criado pelo chart do controller, release 'arc'.
+controllerServiceAccount:
+  namespace: arc-systems
+  name: arc-gha-rs-controller
+
+# ADAPTADO: DinD gerenciado pelo chart, sem imagem antiga pinada por digest.
+# Exige permissao privileged no namespace arc-runners.
+containerMode:
+  type: dind
+
+# ADICIONADO: recursos modestos do runner (o sidecar DinD tambem consome recursos).
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 2Gi

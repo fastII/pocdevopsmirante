@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arc-systems
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arc-runners
+  labels:
+    # NECESSARIO: Docker-in-Docker usa container privilegiado.
+    pod-security.kubernetes.io/enforce: privileged

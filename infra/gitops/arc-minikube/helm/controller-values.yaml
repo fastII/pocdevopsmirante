@@ -1,0 +1,3 @@
+# Controller: manter defaults do chart no ambiente local.
+# Instalar com releaseName=arc no namespace arc-systems.
+{}
