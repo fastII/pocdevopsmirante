@@ -131,6 +131,7 @@ ports:
 providers:
   kubernetesGateway:
     enabled: true
+    experimentalChannel: false
   kubernetesIngress:
     enabled: false
 gatewayClass:
@@ -144,3 +145,15 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+4) ERRO TRAEFIK
+
+K get crd | grep gateway.networking.k8s.io
+backendtlspolicies.gateway.networking.k8s.io   Namespaced   v1(storage)           2026-11-19T21:27:18Z
+gatewayclasses.gateway.networking.k8s.io       Cluster      v1(storage),v1beta1   2026-11-19T21:27:18Z
+gateways.gateway.networking.k8s.io             Namespaced   v1(storage),v1beta1   2026-11-19T21:27:19Z
+grpcroutes.gateway.networking.k8s.io           Namespaced   v1(storage)           2026-11-19T21:27:19Z
+httproutes.gateway.networking.k8s.io           Namespaced   v1(storage),v1beta1   2026-11-19T21:27:19Z
+referencegrants.gateway.networking.k8s.io      Namespaced   v1beta1(storage)      2026-11-19T21:27:19Z
+
+parametro no values
+experimentalChannel: false
