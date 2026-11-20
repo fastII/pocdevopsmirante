@@ -157,3 +157,14 @@ referencegrants.gateway.networking.k8s.io      Namespaced   v1beta1(storage)    
 
 parametro no values
 experimentalChannel: false
+
+5) ERRO NO CRD GATEWAY
+CORRECAO TIVE QUE FAZER BACKUP DOS CRD'S HTTPROUTE E RODAR O YAML 
+
+BACKUP DOS CRD'S
+
+ helm-values % kubectl get $(kubectl get crd -o name | grep 'gateway.networking.k8s.io') \
+  -o yaml > gateway-api-crds-backup.yaml
+
+  kubectl apply --server-side \
+  -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/experimental-install.yaml
