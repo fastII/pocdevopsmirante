@@ -3,22 +3,6 @@ accessLog:
 api:
   dashboard: true
   insecure: false
-extraObjects:
-- apiVersion: v1
-  kind: Secret
-  metadata:
-    name: dashboard-auth-secret
-  stringData:
-    password: P@ssw0rd
-    username: admin
-  type: kubernetes.io/basic-auth
-- apiVersion: traefik.io/v1alpha1
-  kind: Middleware
-  metadata:
-    name: dashboard-auth
-  spec:
-    basicAuth:
-      secret: dashboard-auth-secret
 gateway:
   listeners:
     web:
@@ -36,11 +20,12 @@ gateway:
         from: All
       port: 443
       protocol: HTTPS
+  enabled: true
 ingressClass:
   enabled: false
 ingressRoute:
   dashboard:
-    enabled: true
+    enabled: false
     entryPoints:
     - websecure
     matchRule: Host(`dashboard.docker.localhost`)
@@ -69,6 +54,9 @@ providers:
     enabled: true
   kubernetesIngress:
     enabled: false
+gatewayClass:
+  enabled: true
+  name: traefik
 resources:
   requests:
     cpu: 100m

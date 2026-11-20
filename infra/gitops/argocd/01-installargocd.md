@@ -7,6 +7,8 @@ https://github.com/argoproj/argo-helm/blob/main/charts/argo-cd/values.yaml
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 
+PRIMEIRA EXECUÇÃO PARA CRIAR O ARGOCD
+
 helm upgrade --install argocd argo/argo-cd \
   --namespace argocd \
   --create-namespace \
@@ -18,15 +20,18 @@ helm upgrade --install argocd argo/argo-cd \
   --set configs.params."server\.insecure"=true \
   --wait
 
-
+## Pegar a senha do ARGO ##
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 
+OBS.: Como configuramos o gatewayclass no caso foi necessário o upgrade novamente incluindo os resourceslimites e a criação do HTTPROUTE
+COMANDO PARA HELM PARA BACKUP
+
+helm get values argocd -n argocd -o yaml > argocd-values-backup.yaml
 
 helm upgrade argocd argo/argo-cd \
   -n argocd \
   --reuse-values \
   -f argocd-resources.yaml \
-  --version "$(helm list -n argocd -o json | jq -r '.[] | select(.name=="argocd") | .chart | sub("^argo-cd-"; "")')" \
   --wait \
   --timeout 10m
 

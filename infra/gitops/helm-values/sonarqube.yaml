@@ -30,12 +30,7 @@ persistence:
 service:
   type: ClusterIP
 ingress:
-  enabled: true
-  ingressClassName: traefik
-  hosts:
-  - name: sonarqube.local
-    path: /
-  tls: []
+  enabled: false
 monitoringPasscodeSecretName: sonarqube-monitoring
 monitoringPasscodeSecretKey: monitoringPasscode
 resources:
