@@ -12,7 +12,7 @@ spec:
       helm:
         releaseName: kube-prometheus-stack
         valueFiles:
-          - $values/values/kube-prometheus-stack.yaml
+          - $values/infra/gitops/applications/observability-minikube/values/kube-prometheus-stack.yaml
     - repoURL: https://github.com/fastII/pocdevopsmirante.git
       targetRevision: main
       ref: values
