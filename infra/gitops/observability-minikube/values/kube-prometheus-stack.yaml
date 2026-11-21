@@ -9,7 +9,90 @@ grafana:
   ingress:
     enabled: false
   persistence:
+    enabled: fals
+grafana:
+  enabled: true
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: ClusterIP
+  ingress:
     enabled: false
+  persistence:
+    enabled: false
+
+  # ADICIONADO: requests e limits do Grafana
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 384Mi
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki-gateway.observability.svc.cluster.local
+      isDefault: false
+
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    resources:
+      requests:
+        cpu: 150m
+        memory: 500Mi
+      limits:
+        # ADICIONADO: limite de CPU
+        cpu: 500m
+        memory: 1200Mi
+    storageSpec: {}
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        # ADICIONADO: limite de CPU
+        cpu: 100m
+        memory: 256Mi
+
+# ADICIONADO: requests e limits do Prometheus Operator
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+# ADICIONADO ANTERIORMENTE:
+# Não criar Services de descoberta em kube-system.
+kubeDns:
+  enabled: false
+
+coreDns:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
   additionalDataSources:
     - name: Loki
       type: loki
