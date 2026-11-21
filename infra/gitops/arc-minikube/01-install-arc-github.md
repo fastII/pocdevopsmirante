@@ -71,6 +71,7 @@ application.argoproj.io/arc-controller created
 
 k get applications -n argocd && k get pods -n arc-systems 
 
+
 NAME              SYNC STATUS   HEALTH STATUS
 arc-controller    Synced        Healthy
 harbor            OutOfSync     Healthy
