@@ -12,7 +12,7 @@ spec:
       helm:
         releaseName: alloy
         valueFiles:
-          - $values/infra/gitops/applications/observability-minikube/values/alloy.yaml
+          - $values/infra/gitops/observability-minikube/values/alloy.yaml
     - repoURL: https://github.com/fastII/pocdevopsmirante.git
       targetRevision: main
       ref: values
