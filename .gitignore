@@ -6,3 +6,6 @@ coverage/
 .env.local
 npm-debug.log*
 .DS_Store
+
+# Backup local SonarQube
+sonarqube-h2-backup.mv.db
