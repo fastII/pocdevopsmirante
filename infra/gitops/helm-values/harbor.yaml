@@ -53,7 +53,7 @@ trivy:
       cpu: 1000m
       memory: 512Mi
 portal:
-  resources:0
+  resources:
     requests:
       cpu: 50m
       memory: 64Mi
