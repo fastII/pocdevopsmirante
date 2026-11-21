@@ -104,7 +104,7 @@ jobs:
     # Em feature e PR: apenas build + Trivy, sem credenciais do Harbor.
     # Em tag v*: build + Trivy + push no Harbor, SEM deploy.
     # Em main: build + Trivy + push no Harbor e libera o job GitOps.
-    runs-on: arc-runner-set
+    runs-on: arc-minikube
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
@@ -179,7 +179,7 @@ jobs:
     needs: image
     # Apenas main altera values.yaml; tags publicadas não fazem deploy.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: arc-runner-set
+    runs-on: arc-minikube
     permissions:
       contents: write # Necessário para git push usando GITHUB_TOKEN
     steps:
