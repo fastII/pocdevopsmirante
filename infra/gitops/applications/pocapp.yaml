@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pocapp
+  namespace: argocd
+spec:
+  project: pocapp
+  source:
+    repoURL: https://github.com/fastII/pocdevopsmirante.git
+    targetRevision: main
+    path: helm/pocapp
+    helm:
+      releaseName: pocapp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apps
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
