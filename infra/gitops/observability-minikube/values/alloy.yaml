@@ -1,0 +1,43 @@
+controller:
+  type: daemonset
+alloy:
+  mounts:
+    varlog: true
+  configMap:
+    content: |-
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator = "/"
+          target_label = "__path__"
+          replacement = "/var/log/pods/*$1/*.log"
+        }
+      }
+      local.file_match "pods" {
+        path_targets = discovery.relabel.pod_logs.output
+      }
+      loki.source.file "pods" {
+        targets = local.file_match.pods.targets
+        forward_to = [loki.write.default.receiver]
+      }
+      loki.write "default" {
+        endpoint {
+          url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+        }
+      }
