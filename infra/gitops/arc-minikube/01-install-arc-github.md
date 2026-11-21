@@ -1,90 +1,13 @@
-Os conceitos principais do projeto original:
-- ARC Controller: gerencia os runners no Kubernetes.
-- Runner Scale Set: registra os runners no GitHub e cria pods conforme a demanda.
-- GitHub App: autentica o ARC usando um Kubernetes Secret nativo.
-- DinD: permite executar workflows com docker build e docker push.
-- Escalabilidade: começa com zero runners ociosos e cria pods quando chegam jobs.
+# Configurar a GitHub App do ARC
 
+[Voltar ao runbook](../../../RUNBOOK.md)
 
-Preenchimento da GitHub App
-Campo	Valor recomendado
-GitHub App name	arc-minikube-runner (se disponível)
-Description	GitHub App for Kubernetes self-hosted runners managed by ARC
-Homepage URL	https://github.com/fastII
-Redirect URI	Deixar vazio
-Allow wildcard matching	Desmarcado
-Expire user authorization tokens	Pode manter o padrão
-Request user authorization during installation	Desmarcado
-Enable Device Flow	Desmarcado
-Setup URL	Deixar vazio
-Redirect on update	Desmarcado
+O ARC Controller gerencia os runners. O listener recebe jobs por uma conexão de saída com o GitHub e cria runners sob demanda com Docker-in-Docker (DinD).
 
-2. Webhook
-Desmarque Active.
+1. Em **Settings → Developer settings → GitHub Apps**, crie a app com um nome disponível e a URL do projeto como homepage.
+2. Desative o webhook. Deixe os campos opcionais de callback e setup em branco para este fluxo.
+3. Para o scale set vinculado ao repositório, configure **Repository permissions → Administration: Read and write** e **Metadata: Read-only**. Instale a app no repositório da POC. [Autenticação do ARC](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api)
+4. Registre App ID e Installation ID. Gere a chave privada e guarde o PEM fora do Git. Se uma chave já tiver sido versionada, revogue-a no GitHub e atualize o Secret com uma chave nova.
+5. Crie o Secret arc-github-app e instale o controller e o scale set pelo [procedimento de instalação](README.md).
 
-O ARC não precisa de um webhook público configurado nessa GitHub App para receber jobs. O listener do ARC se comunica com o GitHub por conexões de saída.
-
-Assim, você não precisa configurar Webhook URL nem Webhook Secret.
-3. Permissions
-Essa é a parte mais importante.
-
-Para runners vinculados a um único repositório, configure:
-
-Repository permissions
-Permissão	Acesso
-Administration	Read and write
-Metadata	Read-only (padrão)
-
-As demais permissões podem permanecer em No access, salvo alguma necessidade específica.
-
-Organization permissions: nenhuma permissão adicional para esse cenário.
-
-Account permissions: nenhuma.
-
-Subscribe to events: não é necessário selecionar eventos para a autenticação do ARC.
-
-Se futuramente você quiser compartilhar runners entre vários repositórios de uma organização, será necessário utilizar as permissões de runners no nível da organização.
-
-
-### PROCEDIMENTO DE INSTALACAO ##
-
-Owned by: @fastII
-
-App ID: 5855867
-
-Using your App ID to get installation tokens? You can now use your Client ID instead.
-
-Client ID: Iv23liLQdi8ncuLWMp6k
-
-k apply -f arc-minikube/manifests/namespaces.yaml 
-
-k -n arc-runners create secret generic arc-github-app \
-  --from-literal=github_app_id="" \
-  --from-literal=github_app_installation_id="" \
-  --from-file=github_app_private_key="$HOME/Documents/GitHub/pocdevopsmirante/infra/gitops/arc-minikube/arc-minikube-runne.2026-11-20.private-key.pem"
-
-k apply -f project.yaml 
-appproject.argoproj.io/arc created
-
- k apply -f controller.yaml 
-application.argoproj.io/arc-controller created
-
-k get applications -n argocd && k get pods -n arc-systems 
-
-
-NAME              SYNC STATUS   HEALTH STATUS
-arc-controller    Synced        Healthy
-harbor            OutOfSync     Healthy
-platform-root     Synced        Healthy
-platform-routes   OutOfSync     Healthy
-sonarqube         Synced        Healthy
-traefik           OutOfSync     Healthy
-NAME                                     READY   STATUS    RESTARTS   AGE
-arc-gha-rs-controller-674cf6b948-2pgzs   1/1     Running   0          41s
-
-k apply -f scaleset.yaml 
-application.argoproj.io/arc-runner-minikube created
-
-kubectl get autoscalingrunnersets -A
-NAMESPACE     NAME           MINIMUM RUNNERS   MAXIMUM RUNNERS   CURRENT RUNNERS   STATE   PENDING RUNNERS   RUNNING RUNNERS   FINISHED RUNNERS   DELETING RUNNERS
-arc-runners   arc-minikube   0                 2                 
+O scale set arc-minikube mantém zero runners ociosos e permite um runner simultâneo. O pod reserva 500m de CPU e 768Mi de memória e tem limite conjunto de 1500m e 2Gi para runner e DinD. [Application do scale set](argo/scaleset.yaml)

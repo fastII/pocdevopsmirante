@@ -1,218 +1,46 @@
-helm repo add traefik https://traefik.github.io/charts
-helm repo update
-kubectl create namespace traefik
+# Instalar Traefik e Gateway API
 
+[Voltar ao runbook](../../RUNBOOK.md)
 
-1) Generate a self‑signed certificate valid for *.local
-openssl req -x509 \
-  -nodes \
-  -days 365 \
-  -newkey rsa:2048 \
-  -keyout certs/local.key \
-  -out certs/local.crt \
-  -subj "/CN=*.local" \
-  -addext "subjectAltName=DNS:*.local"
+## 1. Preparar Gateway API e TLS
 
-2) Create the TLS secret in the traefik namespace
-kubectl create secret tls local-selfsigned-tls \
-  --cert=tls.crt --key=tls.key \
-  --namespace traefik
+No cluster novo, instale os CRDs do canal Standard. A versão 1.4.1 segue o registro da POC, cujo diagnóstico anterior usou o bundle Experimental. O provider atual usa `experimentalChannel: false`. Em um cluster existente, confira a versão e o canal antes de substituir CRDs. [Gateway API](https://gateway-api.sigs.k8s.io/guides/getting-started/)
 
-3) CRIAR OS APPLICATION, PROJECT E VALUES PARA O TRAEFIK
+~~~bash
+kubectl apply --server-side \
+  -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml
+kubectl wait --for=condition=Established --timeout=120s \
+  crd/gateways.gateway.networking.k8s.io \
+  crd/httproutes.gateway.networking.k8s.io
+~~~
 
+Crie o Secret TLS no namespace `traefik` seguindo o [guia de certificados](../certs/01-install-certs.md).
 
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: traefik
-  namespace: argocd
-spec:
-  project: platform-networking
+## 2. Sincronizar pelo Argo CD
 
-  sources:
-    - repoURL: https://traefik.github.io/charts
-      chart: traefik
-      targetRevision: "42.4.1"
-      helm:
-        releaseName: traefik
-        valueFiles:
-          - $values/infra/gitops/helm-values/traefik.yaml
+~~~bash
+kubectl apply -f infra/gitops/projects/platform-networking.yaml
+kubectl apply -f infra/gitops/applications/traefik.yaml
+argocd app sync traefik
+argocd app wait traefik --sync --health --timeout 300
+kubectl -n traefik get gateway,svc,pods
+kubectl -n traefik describe gateway traefik-gateway
+~~~
 
-    - repoURL: https://github.com/fastII/pocdevopsmirante.git
-      targetRevision: main
-      ref: values
+O values configura listeners HTTP e HTTPS, redirecionamento para HTTPS, rotas entre namespaces e resources de `100m / 128Mi` de request e `300m / 256Mi` de limite. [Values do Traefik](../gitops/helm-values/traefik.yaml)
 
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: traefik
+## 3. Acessar pelo macOS
 
-  syncPolicy:
-    syncOptions:
-      - CreateNamespace=true
-
-
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: platform-networking
-  namespace: argocd
-spec:
-  description: Traefik Gateway API
-
-  sourceRepos:
-    - https://traefik.github.io/charts
-    - https://github.com/fastII/pocdevopsmirante.git
-
-  destinations:
-    - namespace: traefik
-      server: https://kubernetes.default.svc
-
-  clusterResourceWhitelist:
-    - group: gateway.networking.k8s.io
-      kind: GatewayClass
-
-  namespaceResourceWhitelist:
-    - group: "*"
-      kind: "*"
-
-3) VALUES
-
-accessLog:
-  enabled: true
-api:
-  dashboard: true
-  insecure: false
-gateway:
-  listeners:
-    web:
-      namespacePolicy:
-        from: All
-      port: 80
-      protocol: HTTP
-    websecure:
-      certificateRefs:
-      - group: ''
-        kind: Secret
-        name: local-selfsigned-tls
-      mode: Terminate
-      namespacePolicy:
-        from: All
-      port: 443
-      protocol: HTTPS
-  enabled: true
-ingressClass:
-  enabled: false
-ingressRoute:
-  dashboard:
-    enabled: false
-    entryPoints:
-    - websecure
-    matchRule: Host(`dashboard.docker.localhost`)
-    middlewares:
-    - name: dashboard-auth
-log:
-  level: INFO
-metrics:
-  prometheus:
-    enabled: true
-ports:
-  web:
-    http:
-      redirections:
-        entryPoint:
-          permanent: true
-          scheme: https
-          to: websecure
-    nodePort: 30000
-    port: 80
-  websecure:
-    nodePort: 30001
-    port: 443
-providers:
-  kubernetesGateway:
-    enabled: true
-    experimentalChannel: false
-  kubernetesIngress:
-    enabled: false
-gatewayClass:
-  enabled: true
-  name: traefik
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
-4) ERRO TRAEFIK
-
-K get crd | grep gateway.networking.k8s.io
-backendtlspolicies.gateway.networking.k8s.io   Namespaced   v1(storage)           2026-11-19T21:27:18Z
-gatewayclasses.gateway.networking.k8s.io       Cluster      v1(storage),v1beta1   2026-11-19T21:27:18Z
-gateways.gateway.networking.k8s.io             Namespaced   v1(storage),v1beta1   2026-11-19T21:27:19Z
-grpcroutes.gateway.networking.k8s.io           Namespaced   v1(storage)           2026-11-19T21:27:19Z
-httproutes.gateway.networking.k8s.io           Namespaced   v1(storage),v1beta1   2026-11-19T21:27:19Z
-referencegrants.gateway.networking.k8s.io      Namespaced   v1beta1(storage)      2026-11-19T21:27:19Z
-
-parametro no values
-experimentalChannel: false
-
-5) ERRO NO CRD GATEWAY
-CORRECAO TIVE QUE FAZER BACKUP DOS CRD'S HTTPROUTE E RODAR O YAML 
-
-BACKUP DOS CRD'S
-
- helm-values % kubectl get $(kubectl get crd -o name | grep 'gateway.networking.k8s.io') \
-  -o yaml > gateway-api-crds-backup.yaml
-
-  kubectl apply --server-side \
-  -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/experimental-install.yaml
-
-
-  ## EXPOR O TRAEFIK COMO LOADBALANCE PARA ACESSO EXTERNO ##
-
-  2. Por que não utilizar minikube tunnel?
-O comando:
-minikube tunnel
-
-
-Tem como objetivo disponibilizar Services do tipo LoadBalancer, criando os encaminhamentos e as rotas necessárias para acessá-los a partir do host.
-
-No seu ambiente, ele anunciou:
-EXTERNAL-IP: 127.0.0.1
-
-
-Entretanto, o Traefik utiliza as portas 80 e 443, que são privilegiadas no macOS.
-
-O próprio Minikube informou:
-The service/ingress traefik requires privileged ports
-to be exposed: [80 443]
-sudo permission will be asked for it.
-
-
-Como seu usuário corporativo não pertence ao grupo autorizado para sudo, o túnel não conseguiu disponibilizar essas portas.
-
-Consequência: o Gateway anunciava 127.0.0.1, mas as conexões para https://127.0.0.1:443 falhavam.
-3. Encerrar o túnel anterior
-Se o minikube tunnel estiver aberto em outro terminal, encerre-o com Ctrl+C.
-
-Verifique:
-ps aux | grep '[m]inikube tunnel'
-
-
-Se não retornar processos, o túnel foi encerrado.
-
-Não é necessário remover o Service LoadBalancer, modificar o Helm ou alterar o Gateway.
-4. Expor o Traefik utilizando minikube service
-Execute:
+~~~bash
 minikube service traefik -n traefik --url
+~~~
 
+Mantenha o comando em execução e identifique o encaminhamento do listener HTTPS. As portas locais variam. Após sincronizar as rotas, use `https://argocd.localhost:<porta-https>`, `https://harbor.localhost:<porta-https>` ou `https://sonarqube.localhost:<porta-https>`. O `minikube tunnel` tentou abrir as portas privilegiadas 80 e 443 no Mac da POC e pediu sudo. [Acesso a serviços no Minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/)
 
-Exemplo de saída do seu ambiente:
-http://127.0.0.1:62902
-http://127.0.0.1:62905
+Em caso de erro, confira `Programmed` no Gateway, `Accepted` e `ResolvedRefs` no HTTPRoute e os endpoints do serviço de destino.
 
-https://harbor.localhost:62905
-https://argocd.localhost:62905
-https://sonarqube.localhost:62905
+~~~bash
+kubectl get httproute -A
+kubectl -n argocd describe httproute argocd
+kubectl -n argocd get endpointslices
+~~~

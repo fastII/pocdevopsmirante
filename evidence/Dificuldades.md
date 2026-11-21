@@ -1,4 +1,58 @@
+# Dificuldades no provisionamento
 
+[Voltar ao runbook](../RUNBOOK.md)
+
+## 1. Gateway API e acesso no macOS
+
+A instalação do Traefik precisou dos CRDs da Gateway API. Na recuperação inicial foi usado o bundle Experimental 1.4.1. O provider atual usa o canal Standard. O túnel do Minikube tentou abrir as portas 80 e 443 com sudo, indisponível no Mac corporativo. A saída foi manter aberto o encaminhamento criado por minikube service e usar a porta HTTPS informada. [Traefik e Gateway API](../infra/traefik/01-install-traefik.md)
+
+## 2. Pressão de CPU e memória ao subir observabilidade
+
+Durante a instalação de Prometheus, Grafana, Loki e Alloy, o contêiner Minikube continuava rodando enquanto o API Server falhava em verificações do etcd. Houve timeouts do runtime e probes, episódios de NodeNotReady e reinícios. Na primeira coleta, Docker mostrou 201% de CPU com teto de 2 CPUs, 5,394 GiB de 8 GiB e OOMKilled=false no contêiner do nó.
+
+O contorno registrado aplicou docker update --cpus=4 ao contêiner existente, preservando o perfil. Em seguida, o containerd respondeu, e readyz retornou etcd ok. Ainda havia pods em recuperação. A alteração direta no Docker foi um contorno da sessão e pode divergir da configuração do perfil.
+
+Na auditoria posterior, a VM do Docker Desktop e a capacidade anunciada pelo Kubernetes mostravam 8 CPUs e 9,67 GiB. O contêiner Minikube ainda tinha teto de 4 CPUs e 8 GiB. Seu consumo chegou a 7,10 GiB de 8 GiB, ou 88,69%, e o kubelet registrou aproximadamente 279 MiB de swap no nó. O PSI de CPU some avg10 chegou a 87,53% e o de memória a 15,36%, indicando que tarefas estavam esperando recursos. Essa coleta encontrou MemoryPressure=False e não registrou OOMKilled nos estados de pods consultados. A pressão observada explica o diagnóstico de capacidade, sem comprovar um OOM.
+
+## 3. Mudanças no Git e validação
+
+A revisão usou as medições do nó e o P95 de uma janela de até seis horas do Prometheus. Os patches foram validados com renderização Helm nas versões usadas na POC. As Applications alteradas e o manifesto do ARC passaram por dry-run no API Server. O efeito no consumo após sincronizar os values ainda precisa ser medido.
+
+| Componente | Mudança versionada |
+| --- | --- |
+| [Prometheus e Grafana](../infra/gitops/observability-minikube/values/kube-prometheus-stack.yaml) | Remoção das chaves duplicadas, requests e limits do Prometheus e Alertmanager e resources de sidecars, Operator e exporters |
+| [Loki](../infra/gitops/observability-minikube/values/loki.yaml) e [Alloy](../infra/gitops/observability-minikube/values/alloy.yaml) | Resources dos serviços principais, gateway e sidecars |
+| [Harbor](../infra/gitops/helm-values/harbor.yaml) | Correção das chaves de Registry e Registryctl, orçamento de Nginx e init containers do banco |
+| [SonarQube](../infra/gitops/helm-values/sonarqube.yaml) | Request de 400m / 1536Mi e limite de 1500m / 2Gi no contêiner principal, com resources nos init containers |
+| [Argo CD](../infra/gitops/helm-values/argocd-resources.yaml), [Traefik](../infra/gitops/helm-values/traefik.yaml) e [Kyverno](../infra/gitops/applications/kyverno.yaml) | Ajuste dos componentes conforme uso observado e configuração dos controladores |
+| [ARC](../infra/gitops/arc-minikube/argo/scaleset.yaml) | Um runner simultâneo e limite de 1500m / 2Gi por pod de runner e DinD |
+
+A projeção anterior estimou requests de 3,875 CPUs e 6,76 GiB sem runner, e 4,375 CPUs e 7,51 GiB com um runner. São reservas de agendamento, e o consumo real inclui runtime, kubelet e outros processos. Com 4 CPUs e 8 GiB efetivos, rode primeiro sem jobs. Em um Mac de 16 GiB, avalie a pressão do host antes de subir o Docker Desktop de 8 GiB para cerca de 10 GiB. O kindnet, observado com limite de 100m, pertence ao sistema do Minikube e ficou fora das mudanças nos values.
+
+A revisão também corrigiu o caminho versionado das políticas Kyverno após erro de comparação e habilitou a criação do namespace apps para o primeiro sync da POCAPP.
+
+## 4. Diagnosticar uma recorrência
+
+~~~bash
+docker info --format 'CPUs={{.NCPU}} RAM={{.MemTotal}}'
+docker inspect minikube --format 'RAM={{.HostConfig.Memory}} CPUs={{.HostConfig.NanoCpus}} OOM={{.State.OOMKilled}}'
+docker stats --no-stream minikube
+minikube status
+kubectl --request-timeout=10s get --raw='/readyz?verbose'
+kubectl describe node minikube
+kubectl top pods -A --sort-by=memory
+kubectl top pods -A --sort-by=cpu
+kubectl get events -A --sort-by=.lastTimestamp
+~~~
+
+Se o Metrics Server estiver indisponível, use Docker e os eventos como primeiras fontes. Compare as métricas antes e depois de cada sync e durante um job ARC. Para considerar recriar o perfil, inventarie e preserve PVCs e Secrets primeiro.
+
+<details>
+<summary>Registro original da sessão de diagnóstico</summary>
+
+Os comandos, configurações e saídas abaixo são evidência histórica. Use os passos e values versionados acima para operação.
+
+~~~text
 ## PROBLEMA OOMKilled - MINIKUBE ##
 
 Dificuldade em provisionar o ambiente devido recursos de hardware no Mac
@@ -507,3 +561,6 @@ kubectl --request-timeout=15s get --raw='/readyz?verbose'
 [+]poststarthook/apiservice-openapiv3-controller ok
 [+]shutdown ok
 readyz check passed
+~~~
+
+</details>

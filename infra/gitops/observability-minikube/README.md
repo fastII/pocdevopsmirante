@@ -1,6 +1,6 @@
 # Observabilidade GitOps no Minikube — Argo CD + Traefik Gateway API
 
-> **Origem e limite de validação:** esta é uma implementação independente para a POC. O repositório `valentineezeja/argo-app` não pôde ser inspecionado nesta sessão. Não é uma cópia nem uma auditoria do repositório informado. Versões dos charts são fixadas como ponto de partida e precisam ser verificadas no registry e testadas no cluster.
+[Voltar ao runbook](../../../RUNBOOK.md)
 
 ## Objetivo
 
@@ -26,32 +26,28 @@ Traefik Gateway (namespace traefik) -> HTTPRoute -> Grafana
 
 ## 1. Versionar arquivos no Git
 
-Copie a pasta para seu repositório GitOps. Substitua `https://github.com/SEU_USUARIO/SEU_REPOSITORIO.git` nos arquivos `argocd/*.yaml` e no AppProject. Se colocar os arquivos em uma subpasta, ajuste os caminhos `values/...` e `path: manifests`.
+As Applications usam a branch `main` deste repositório. Confirme a versão publicada e execute os comandos desta página a partir de `infra/gitops/observability-minikube/`.
 
 > O Argo CD usa `sources` com `$values`: o primeiro source instala o chart Helm e o segundo lê os values do seu Git. Não é necessário `helm install`.
 
 ## 2. Criar namespace e credencial do Grafana
 
+Execute este bloco no Bash.
+
 ```bash
 kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
-read -s "GRAFANA_PASSWORD?Senha do Grafana: "
-echo
+read -rs -p 'Senha do Grafana: ' GRAFANA_PASSWORD
 
 kubectl create secret generic grafana-admin \
   --namespace observability \
   --from-literal=admin-user=admin \
-  --from-literal=admin-password="$GRAFANA_PASSWORD"
+  --from-literal=admin-password="$GRAFANA_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 unset GRAFANA_PASSWORD
 ```
 
-Guarde a senha em gerenciador de credenciais. Para recuperar localmente, com autorização:
-
-```bash
-kubectl -n observability get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo
-```
-
-Não versione Secrets com senhas em texto ou base64.
+Guarde a senha no gerenciador de credenciais. Mantenha Secrets com senhas fora do Git.
 
 ## 3. Criar AppProject e Applications
 
@@ -108,13 +104,14 @@ No Grafana, confira datasources **Prometheus** e **Loki**. Execute PromQL `up` e
 
 ## 7. Dimensionamento e limitações
 
+O values do kube-prometheus-stack foi consolidado para eliminar chaves duplicadas. Prometheus reserva 200m / 640Mi e tem limite de 500m / 1200Mi. Grafana, sidecars, Operator, Alertmanager e exporters também têm resources. Loki e Alloy definem orçamentos para os serviços principais e auxiliares. [Prometheus e Grafana](values/kube-prometheus-stack.yaml) · [Loki](values/loki.yaml) · [Alloy](values/alloy.yaml) · [Evidência da auditoria](../../../evidence/Dificuldades.md)
+
 - Configuração para **POC**, não produção; Prometheus com retenção de 2 dias, Loki 48 horas, Loki PVC de 5 GiB, Grafana sem persistência.
 - No Minikube de nó único, métricas do control plane como etcd/scheduler/controller-manager foram desabilitadas para evitar targets não acessíveis.
 - O Alloy monta logs do host e roda como DaemonSet; revise políticas corporativas antes de usar.
 - O chart do Loki pode exigir ajustes conforme a versão; se `obs-loki` falhar, valide o chart efetivo e seus valores com `helm show values`.
 - `AppProject` usa whitelist ampla para permitir CRDs/ClusterRoles do Prometheus Operator: **restrinja antes de produção**.
 - O acesso ao Grafana é via TLS self-signed existente no Gateway. Configure autenticação/SSO antes de compartilhar.
-- Os charts e suas versões precisam ser validados em ambiente real; nenhum deploy foi executado aqui.
 
 ## 8. Troubleshooting
 
