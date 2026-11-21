@@ -1,0 +1,22 @@
+
+const http = require("node:http");
+
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.setHeader("Content-Type", "application/json");
+
+  if (req.url === "/healthz" && req.method === "GET") {
+    res.writeHead(200);
+    return res.end(JSON.stringify({
+      status: "healthy",
+      application: "healthz-api",
+      timestamp: new Date().toISOString()
+    }));
+  }
+
+  res.writeHead(404);
+  res.end(JSON.stringify({ error: "Not Found" }));
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`API listening on port ${PORT}`);
+});
