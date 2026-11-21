@@ -1,4 +1,4 @@
-name: POCAPP - CI Security Harbor GitOps
+name: POCAPP - CI & CD
 
 # CI em main, feature/*, tags v* e Pull Requests para main.
 # Feature/PR: testes, Sonar, build e Trivy (sem publicação).
@@ -72,7 +72,7 @@ jobs:
   sonar:
     name: SonarQube + Quality Gate
     needs: validate
-    runs-on: arc-runner-set
+    runs-on: arc-minikube
     steps:
       - uses: actions/checkout@v4
         with:
