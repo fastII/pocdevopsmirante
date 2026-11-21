@@ -8,5 +8,5 @@ kind: Namespace
 metadata:
   name: arc-runners
   labels:
-    # NECESSARIO: Docker-in-Docker usa container privilegiado.
+    # PRESERVADO: DinD requer pods privilegiados
     pod-security.kubernetes.io/enforce: privileged

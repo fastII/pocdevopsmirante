@@ -1,13 +1,11 @@
-# Colocar em .github/workflows/test-arc.yaml no repositorio GitHub.
-name: Test ARC Minikube
+name: ARC smoke test
 on:
   workflow_dispatch:
 jobs:
-  validate:
-    runs-on: arc-bs2bet
+  smoke:
+    runs-on: arc-minikube
     steps:
-      - name: Runner details
-        run: |
-          echo "Runner: $RUNNER_NAME"
+      - run: |
+          echo "ARC Minikube OK"
           uname -a
           docker version

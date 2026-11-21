@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: arc
+  namespace: argocd
+spec:
+  description: ARC GitOps - Minikube
+  sourceRepos:
+    - ghcr.io/actions/actions-runner-controller-charts
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: arc-systems
+    - server: https://kubernetes.default.svc
+      namespace: arc-runners
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
