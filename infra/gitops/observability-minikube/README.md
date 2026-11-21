@@ -34,9 +34,15 @@ Copie a pasta para seu repositório GitOps. Substitua `https://github.com/SEU_US
 
 ```bash
 kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n observability create secret generic grafana-admin \
+read -s "GRAFANA_PASSWORD?Senha do Grafana: "
+echo
+
+kubectl create secret generic grafana-admin \
+  --namespace observability \
   --from-literal=admin-user=admin \
-  --from-literal=admin-password="$(openssl rand -base64 24)"
+  --from-literal=admin-password="$GRAFANA_PASSWORD"
+
+unset GRAFANA_PASSWORD
 ```
 
 Guarde a senha em gerenciador de credenciais. Para recuperar localmente, com autorização:
