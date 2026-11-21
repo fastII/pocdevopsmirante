@@ -154,7 +154,7 @@ jobs:
   image:
     name: Docker Build + Trivy + Harbor
     needs: sonar
-    runs-on: arc-minikube
+    runs-on: ubuntu
 
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -234,7 +234,7 @@ jobs:
 
     if: github.ref == 'refs/heads/main'
 
-    runs-on: arc-minikube
+    runs-on: ubuntu
 
     permissions:
       contents: write
