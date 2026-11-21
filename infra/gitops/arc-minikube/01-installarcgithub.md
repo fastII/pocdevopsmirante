@@ -83,3 +83,7 @@ arc-gha-rs-controller-674cf6b948-2pgzs   1/1     Running   0          41s
 
 k apply -f scaleset.yaml 
 application.argoproj.io/arc-runner-minikube created
+
+kubectl get autoscalingrunnersets -A
+NAMESPACE     NAME           MINIMUM RUNNERS   MAXIMUM RUNNERS   CURRENT RUNNERS   STATE   PENDING RUNNERS   RUNNING RUNNERS   FINISHED RUNNERS   DELETING RUNNERS
+arc-runners   arc-minikube   0                 2                 

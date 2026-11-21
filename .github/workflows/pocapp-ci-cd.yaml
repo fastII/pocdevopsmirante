@@ -36,7 +36,7 @@ concurrency:
 jobs:
   validate:
     name: Node.js + Helm lint
-    runs-on: arc-runner-set # Substituir pelo nome real do scale set ARC
+    runs-on: arc-minikube # Substituir pelo nome real do scale set ARC
     steps:
       - name: Checkout
         uses: actions/checkout@v4
