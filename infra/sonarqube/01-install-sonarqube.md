@@ -17,9 +17,9 @@ unset SONAR_MONITORING_PASSCODE
 
 ## 2. Sincronizar e validar
 
+Após o `platform-root` criar a Application `sonarqube`, faça o sync manual da filha se o provisionamento foi iniciado sem o script.
+
 ~~~bash
-kubectl apply -f infra/gitops/projects/platform-quality.yaml
-kubectl apply -f infra/gitops/applications/sonarqube.yaml
 argocd app sync sonarqube
 argocd app wait sonarqube --sync --health --timeout 600
 kubectl -n sonarqube get pods,pvc,svc

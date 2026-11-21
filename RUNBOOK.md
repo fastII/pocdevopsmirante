@@ -2,6 +2,39 @@
 
 Execute os comandos a partir da raiz do repositório, salvo quando o guia indicar outro diretório. A referência da POC é um cluster Minikube de nó único no macOS, com Docker Desktop, runtime containerd e Kubernetes v1.37.0.
 
+Na instalação original, as Applications foram provisionadas individualmente pelo Argo CD. O script abaixo usa `platform-root` para reproduzir o ambiente. [Evidências da instalação original](evidence/Provisionamento.md)
+
+## Provisionamento pelo script
+
+Com o Docker Desktop aberto, instale Bash, Git, Minikube, kubectl, Helm, OpenSSL, jq e o yq v4 de mikefarah. Para incluir ARC, tenha a GitHub App instalada no repositório da POC, seus IDs e a chave PEM em um local seguro fora do Git. [Preparar a GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md)
+
+~~~bash
+bash scripts/provision-minikube.sh --servir
+~~~
+
+O [script](scripts/provision-minikube.sh) prepara o Minikube, pede as credenciais em falta e executa o provisionamento na ordem abaixo. Com `--servir`, mantém aberto o encaminhamento HTTPS do Traefik. Encerre-o com `Ctrl+C`.
+
+| Grupo | Quem cria as Applications |
+| --- | --- |
+| Traefik, Harbor, SonarQube, Kyverno, políticas, rotas da plataforma e POCAPP | `platform-root` lê `infra/gitops/applications/` |
+| ARC | O script aplica o projeto, o controller e o scale set |
+| Observabilidade | O script aplica o projeto e as Applications de Prometheus/Grafana, Loki, Alloy e rota do Grafana |
+
+Dentro da observabilidade, apenas o Grafana é publicado por HTTPRoute. As rotas do Argo CD, Harbor, SonarQube e POCAPP fazem parte da plataforma.
+
+O `platform-root` cria a Application `pocapp`. A própria filha usa auto-sync para renderizar `helm/pocapp` e implantar no namespace `apps`. Os AppProjects continuam separados. Eles autorizam os repositórios, destinos e recursos usados pelas Applications. [Application POCAPP](infra/gitops/applications/pocapp.yaml)
+
+- Rode `bash scripts/provision-minikube.sh --help` para ver as variáveis de automação. Reexecuções reutilizam Secrets existentes. Em um Mac com pouca folga, use `--sem-arc` ou `--sem-observabilidade` para omitir essas etapas em um cluster novo.
+- Com os values padrão da POCAPP, o script constrói a imagem no nó. Se `main` já aponta para um registry, a tag precisa estar disponível e acessível no Minikube. Para reconstruir o cluster com uma imagem preservada, passe `POCAPP_IMAGE_ARCHIVE` com um archive da referência esperada e use política de pull `IfNotPresent` ou `Never`. Para registry privado, passe `POCAPP_DOCKER_CONFIG` e declare o nome do Secret em `imagePullSecrets`. [Imagem e CI/CD da POCAPP](app/Runbookapp.md)
+- GitHub Actions ainda exige as variáveis e os Secrets do workflow. O runner hospedado pelo GitHub precisa conseguir acessar o Harbor para fazer push. As URLs `.localhost` do encaminhamento são para acesso no Mac. [Configuração do CI/CD](app/Runbookapp.md#3-configurar-o-cicd)
+
+Depois do provisionamento, acesse `https://argocd.localhost:8443`. O Argo CD atende HTTP interno no Service `argocd-server:80`. O Traefik termina TLS no listener `websecure`, e a Application `platform-routes` publica o HTTPRoute. [Values do Argo CD](infra/gitops/helm-values/argocd-resources.yaml) · [HTTPRoute do Argo CD](infra/gitops/routes/argocd-httproute.yaml) · [Values do Traefik](infra/gitops/helm-values/traefik.yaml)
+
+<details>
+<summary>Arquitetura e provisionamento manual</summary>
+
+Use as etapas abaixo para entender a ordem do bootstrap ou instalar por etapas. Se rodou o script com sucesso, vá direto a [Operar e recuperar](#4-operar-e-recuperar).
+
 ## Arquitetura
 
 ~~~mermaid
@@ -62,7 +95,7 @@ Com o Minikube e o Argo CD prontos, use `platform-root` como entrada da platafor
 
 ### 3.1 Preparar as dependências
 
-Antes de aplicar o pai, execute as etapas indicadas abaixo para que as filhas encontrem os CRDs, Secrets e a imagem esperada. Os comandos de criação individual de Applications nos guias servem para instalações isoladas.
+Antes de aplicar o pai, execute as etapas indicadas abaixo para que as filhas encontrem os CRDs, Secrets e a imagem esperada.
 
 | Dependência | Procedimento |
 | --- | --- |
@@ -163,6 +196,8 @@ docker stats --no-stream minikube
 ~~~
 
 Registre o SHA reconciliado e confirme as Applications provisionadas como `Synced/Healthy`, os PVCs em `Bound`, as rotas aceitas e o endpoint da POCAPP respondendo. O ARC pode ficar sem pods de runner quando estiver ocioso.
+
+</details>
 
 ## 4. Operar e recuperar
 

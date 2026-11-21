@@ -17,9 +17,9 @@ unset HARBOR_ADMIN_PASSWORD
 
 ## 2. Instalar pelo Argo CD
 
+Após o `platform-root` criar a Application `harbor`, faça o sync manual da filha se o provisionamento foi iniciado sem o script.
+
 ~~~bash
-kubectl apply -f infra/gitops/projects/platform-registry.yaml
-kubectl apply -f infra/gitops/applications/harbor.yaml
 argocd app sync harbor
 argocd app wait harbor --sync --health --timeout 600
 kubectl -n harbor get pods,pvc,svc

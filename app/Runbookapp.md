@@ -38,9 +38,9 @@ Os jobs de validação e análise Sonar executam no runner arc-minikube. O build
 
 ## 4. Implantar e conferir
 
+O `platform-root` cria a Application `pocapp`, que usa auto-sync.
+
 ~~~bash
-kubectl apply -f infra/gitops/projects/pocapp.yaml
-kubectl apply -f infra/gitops/applications/pocapp.yaml
 argocd app wait pocapp --sync --health --timeout 300
 kubectl -n apps rollout status deployment/pocapp
 kubectl -n apps describe httproute pocapp

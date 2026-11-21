@@ -18,9 +18,9 @@ Crie o Secret TLS no namespace `traefik` seguindo o [guia de certificados](../ce
 
 ## 2. Sincronizar pelo Argo CD
 
+O `platform-root` cria a Application `traefik`. Se estiver fazendo o bootstrap manual, sincronize a filha e aguarde o Gateway. [App of Apps](../../RUNBOOK.md#3-provisionar-as-aplicações-com-app-of-apps)
+
 ~~~bash
-kubectl apply -f infra/gitops/projects/platform-networking.yaml
-kubectl apply -f infra/gitops/applications/traefik.yaml
 argocd app sync traefik
 argocd app wait traefik --sync --health --timeout 300
 kubectl -n traefik get gateway,svc,pods

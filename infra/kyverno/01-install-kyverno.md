@@ -4,11 +4,9 @@
 
 ## 1. Instalar os controladores
 
-O chart 3.10.0 usa uma réplica por controlador, auto-sync e Server-Side Apply. Execute na raiz do repositório.
+O `platform-root` cria `kyverno` e `kyverno-policies`. O chart 3.10.0 usa uma réplica por controlador, auto-sync e Server-Side Apply.
 
 ~~~bash
-kubectl apply -f infra/gitops/projects/kyverno.yaml
-kubectl apply -f infra/gitops/applications/kyverno.yaml
 argocd app wait kyverno --sync --health --timeout 300
 kubectl -n kyverno get pods,deployments
 kubectl get crds -o name | grep kyverno
@@ -23,7 +21,6 @@ Confirme que ValidatingPolicy está disponível após a instalação dos control
 
 ~~~bash
 kubectl api-resources --api-group=policies.kyverno.io
-kubectl apply -f infra/gitops/applications/kyverno-policies.yaml
 argocd app diff kyverno-policies
 argocd app sync kyverno-policies
 argocd app wait kyverno-policies --sync --health --timeout 180
