@@ -12,7 +12,7 @@ spec:
     helm:
       releaseName: arc-minikube
       valuesObject:
-        # ALTERAR: URL do repositorio em que o GitHub App foi instalado
+        # ALTERAR: URL do repositorio em que o GitHub App foi instalado #
         githubConfigUrl: https://github.com/fastII/pocdevopsmirante.git
         # ADICIONADO: Kubernetes Secret nativo, sem External Secrets
         githubConfigSecret: arc-github-app
