@@ -5,13 +5,18 @@ metadata:
   namespace: argocd
 spec:
   project: observability
+
   source:
     repoURL: https://github.com/fastII/pocdevopsmirante.git
     targetRevision: main
-    path: manifests
+
+    # CORRIGIDO: caminho completo a partir da raiz do repositório
+    path: infra/gitops/applications/observability-minikube/manifests
+
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
+
   syncPolicy:
     automated:
       prune: true
