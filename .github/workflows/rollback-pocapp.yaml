@@ -1,0 +1,62 @@
+
+name: Rollback POCAPP
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag da imagem no Harbor para restaurar"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Instalar yq
+        run: |
+          YQ_VERSION=v4.44.6
+          curl -fsSL \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /tmp/yq
+          chmod +x /tmp/yq
+          sudo mv /tmp/yq /usr/local/bin/yq
+
+      - name: Atualizar tag da imagem
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          yq -i '.image.tag = strenv(IMAGE_TAG)' \
+            helm/pocapp/values.yaml
+
+          helm_version=$(yq '.image.tag' helm/pocapp/values.yaml)
+          echo "Versão selecionada: $helm_version"
+
+      - name: Commit e push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add helm/pocapp/values.yaml
+
+          if git diff --cached --quiet; then
+            echo "Tag já configurada."
+            exit 0
+          fi
+
+          git commit -m \
+            "rollback(pocapp): restore image ${{ inputs.image_tag }}"
+
+          git push origin HEAD:main
+
