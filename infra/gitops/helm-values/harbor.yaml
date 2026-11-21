@@ -51,9 +51,9 @@ trivy:
       memory: 256Mi
     limits:
       cpu: 1000m
-      memory: 1Gi
+      memory: 512Mi
 portal:
-  resources:
+  resources:0
     requests:
       cpu: 50m
       memory: 64Mi
