@@ -40,3 +40,13 @@ kubeScheduler:
   enabled: false
 kubeEtcd:
   enabled: false
+# ADICIONADO: não criar Services de descoberta em kube-system.
+# Evita ampliar os destinos permitidos no AppProject observability.
+kubeDns:
+  enabled: false
+
+coreDns:
+  enabled: false
+
+kubeProxy:
+  enabled: false  
