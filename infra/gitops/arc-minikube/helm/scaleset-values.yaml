@@ -6,7 +6,7 @@ runnerScaleSetName: arc-bs2bet
 
 # ADAPTADO: escala conservadora para POC no Minikube.
 minRunners: 0
-maxRunners: 2
+maxRunners: 1
 
 # PRESERVADO: ServiceAccount criado pelo chart do controller, release 'arc'.
 controllerServiceAccount:
@@ -18,9 +18,29 @@ controllerServiceAccount:
 containerMode:
   type: dind
 
-# ADICIONADO: recursos modestos do runner (o sidecar DinD tambem consome recursos).
+listenerTemplate:
+  spec:
+    containers:
+      - name: listener
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+# ADICIONADO: orçamento do pod cobre conjuntamente runner e sidecar DinD.
 template:
   spec:
+    # Kubernetes 1.37: limita o orçamento conjunto de runner + DinD.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 768Mi
+      limits:
+        cpu: 1500m
+        memory: 2Gi
     containers:
       - name: runner
         image: ghcr.io/actions/actions-runner:latest
@@ -30,5 +50,5 @@ template:
             cpu: 250m
             memory: 512Mi
           limits:
-            cpu: "2"
-            memory: 2Gi
+            cpu: "1"
+            memory: 1Gi

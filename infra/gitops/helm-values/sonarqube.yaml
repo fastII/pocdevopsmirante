@@ -1,27 +1,7 @@
 community:
   enabled: true
-postgresql:
-  enabled: true
-  auth:
-    username: sonar
-    database: sonarqube
-    existingSecret: sonarqube-postgresql
-    secretKeys:
-      adminPasswordKey: postgres-password
-      userPasswordKey: password
-  persistence:
-    enabled: true
-    storageClass: standard
-    accessMode: ReadWriteOnce
-    size: 10Gi
-  primary:
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 500m
-        memory: 1Gi
+# O chart 2026.5.1005 não inclui PostgreSQL. Para uso além da POC,
+# provisione o banco separadamente e configure jdbcOverwrite + Secret.
 persistence:
   enabled: true
   storageClass: standard
@@ -35,8 +15,34 @@ monitoringPasscodeSecretName: sonarqube-monitoring
 monitoringPasscodeSecretKey: monitoringPasscode
 resources:
   requests:
-    cpu: 500m
-    memory: 1Gi
+    cpu: 400m
+    memory: 1536Mi
+    ephemeral-storage: 2Gi
   limits:
-    cpu: 2000m
+    cpu: 1500m
     memory: 2Gi
+    ephemeral-storage: 10Gi
+initContainers:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+initSysctl:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+initFs:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi

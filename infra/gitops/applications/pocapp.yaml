@@ -19,4 +19,4 @@ spec:
       prune: false # Evita exclusões automáticas nesta POC
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false # O namespace apps deve existir
+      - CreateNamespace=true

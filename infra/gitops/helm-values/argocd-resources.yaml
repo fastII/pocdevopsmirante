@@ -13,13 +13,13 @@ server:
       memory: 128Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 384Mi
 
 controller:
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 300m
+      memory: 640Mi
     limits:
       cpu: "1"
       memory: 1Gi
@@ -28,10 +28,10 @@ repoServer:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 192Mi
     limits:
-      cpu: "1"
-      memory: 1Gi
+      cpu: 500m
+      memory: 512Mi
 
 redis:
   resources:
@@ -39,23 +39,32 @@ redis:
       cpu: 50m
       memory: 64Mi
     limits:
-      cpu: 250m
-      memory: 256Mi
+      cpu: 200m
+      memory: 192Mi
 
 applicationSet:
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 64Mi
     limits:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 200m
+      memory: 256Mi
 
 notifications:
   resources:
     requests:
       cpu: 25m
       memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 192Mi
+
+dex:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
     limits:
       cpu: 200m
       memory: 256Mi

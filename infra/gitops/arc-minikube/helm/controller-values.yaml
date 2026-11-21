@@ -1,3 +1,8 @@
-# Controller: manter defaults do chart no ambiente local.
-# Instalar com releaseName=arc no namespace arc-systems.
-{}
+# Controller do ARC dimensionado pelo P95 observado no Minikube.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

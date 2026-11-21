@@ -1,6 +1,13 @@
 controller:
   type: daemonset
 alloy:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 400m
+      memory: 384Mi
   mounts:
     varlog: true
   configMap:
@@ -41,3 +48,11 @@ alloy:
           url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
         }
       }
+configReloader:
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi

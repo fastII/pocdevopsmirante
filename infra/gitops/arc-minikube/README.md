@@ -42,4 +42,6 @@ Copie `examples/test-runner.yaml` para `.github/workflows/arc-smoke.yaml` no rep
 - DinD usa containers privilegiados; executar apenas workflows confiaveis.
 - Nao versionar o PEM, tokens, nem manifests com credenciais literais.
 - `containerMode: dind` depende do suporte do chart e de recursos livres no Minikube.
+- Em um Docker Desktop limitado a 8 GiB, mantenha `maxRunners: 1`; o orçamento
+  do pod limita runner + DinD a 1,5 CPU e 2 GiB.
 - Em caso de falha de autenticacao, confira escopo de instalacao da GitHub App e permissoes.

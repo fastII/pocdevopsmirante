@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/fastII/pocdevopsmirante.git
     targetRevision: main
-    path: infra/gitops/security/kyverno
+    path: infra/security/kyverno
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno

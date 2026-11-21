@@ -19,15 +19,33 @@ spec:
         runnerScaleSetName: arc-minikube
         # ALTERADO: escala reduzida para POC
         minRunners: 0
-        maxRunners: 2
+        maxRunners: 1
         controllerServiceAccount:
           namespace: arc-systems
           name: arc-gha-rs-controller
         # ALTERADO: DinD nativo do chart, sem dependencias AWS
         containerMode:
           type: dind
+        listenerTemplate:
+          spec:
+            containers:
+              - name: listener
+                resources:
+                  requests:
+                    cpu: 25m
+                    memory: 64Mi
+                  limits:
+                    cpu: 200m
+                    memory: 256Mi
         template:
           spec:
+            resources:
+              requests:
+                cpu: 500m
+                memory: 768Mi
+              limits:
+                cpu: 1500m
+                memory: 2Gi
             containers:
               - name: runner
                 image: ghcr.io/actions/actions-runner:latest
@@ -37,8 +55,8 @@ spec:
                     cpu: 250m
                     memory: 512Mi
                   limits:
-                    cpu: '2'
-                    memory: 2Gi
+                    cpu: '1'
+                    memory: 1Gi
   destination:
     server: https://kubernetes.default.svc # ALTERADO: EKS -> Minikube
     namespace: arc-runners
