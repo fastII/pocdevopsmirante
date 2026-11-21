@@ -4,10 +4,10 @@ database:
     resources:
       requests:
         cpu: 100m
-        memory: 256Mi
+        memory: 512Mi
       limits:
         cpu: 500m
-        memory: 768Mi
+        memory: 1000Mi
 expose:
   type: clusterIP
   tls:
