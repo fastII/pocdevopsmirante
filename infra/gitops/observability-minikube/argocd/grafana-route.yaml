@@ -11,7 +11,7 @@ spec:
     targetRevision: main
 
     # CORRIGIDO: caminho completo a partir da raiz do repositório
-    path: infra/gitops/applications/observability-minikube/manifests
+    path: infra/gitops/observability-minikube/manifests
 
   destination:
     server: https://kubernetes.default.svc
