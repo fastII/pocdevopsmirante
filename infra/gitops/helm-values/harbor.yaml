@@ -1,6 +1,10 @@
 database:
   type: internal
   internal:
+    livenessProbe:
+      timeoutSeconds: 5
+    readinessProbe:
+      timeoutSeconds: 5
     resources:
       requests:
         cpu: 100m
@@ -68,15 +72,8 @@ nginx:
     limits:
       cpu: 100m
       memory: 128Mi
-#trivy:
-#  enabled: true
-#  resources:
-#    requests:
-#      cpu: 100m
-#      memory: 128Mi
-#    limits:
-#      cpu: 750m
-#      memory: 768Mi
+trivy:
+  enabled: false
 portal:
   resources:
     requests:

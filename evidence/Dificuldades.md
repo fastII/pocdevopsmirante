@@ -47,6 +47,31 @@ kubectl get events -A --sort-by=.lastTimestamp
 
 Se o Metrics Server estiver indisponível, use Docker e os eventos como primeiras fontes. Compare as métricas antes e depois de cada sync e durante um job ARC. Para considerar recriar o perfil, inventarie e preserve PVCs e Secrets primeiro.
 
+## 5. Recorrência de pressão e instabilidade no Harbor
+
+O Minikube chegou a 7,26 GiB de 8 GiB com um job ARC ativo. O PostgreSQL do Harbor usava cerca de 83 MiB, mas reiniciava quando sua liveness probe de 1 segundo expirava. O pod do Trivy já havia sido retirado e o Core ainda consultava o scanner, o que deixava a API de saúde do Harbor em `unhealthy`.
+
+### Contorno aplicado
+
+1. O job foi cancelado pelo GitHub Actions. Sem runner ativo, a primeira coleta caiu para 6,87 GiB.
+2. As probes de liveness e readiness do StatefulSet `harbor-database` receberam timeout de 5 segundos. O banco reiniciou uma vez, reutilizou o PVC e voltou `1/1 Ready`.
+3. O ConfigMap do Core recebeu `WITH_TRIVY=false`. Após o rollout do Core, `/api/v2.0/health` retornou `healthy` para todos os componentes habilitados. A memória ainda estava em 7,32 GiB de 8 GiB na última coleta.
+
+### Correção permanente e alívio de memória
+
+- Publique os timeouts e `trivy.enabled: false` na revisão Git lida pelo Argo CD e sincronize a Application `harbor`. O chart habilita o Trivy por padrão se o bloco for omitido. Mantenha o PostgreSQL e o Redis, que são dependências do Harbor. [Values do Harbor](../infra/gitops/helm-values/harbor.yaml)
+- O ajuste de observabilidade passa os intervalos padrão de scrape e avaliação do Prometheus de 30s para 60s. O chart foi renderizado com os novos valores. Após o sync de `obs-prometheus`, meça o efeito no consumo. Alvos com intervalo próprio podem continuar coletando com outra frequência. [Values do Prometheus](../infra/gitops/observability-minikube/values/kube-prometheus-stack.yaml)
+- Para obter folga imediata fora das janelas de análise, o SonarQube é o maior candidato, com cerca de 1,71 GiB na coleta. A política do StatefulSet retém o PVC ao reduzir réplicas. Se precisar manter a análise disponível, pausar Loki e Alloy juntos é outra opção, com cerca de 400 MiB de consumo observado e interrupção da coleta de logs.
+
+Para pausar o SonarQube temporariamente e reativá-lo antes do próximo pipeline, use os comandos abaixo. Aguarde o rollout antes de enviar um job de análise.
+
+~~~bash
+kubectl --context minikube -n sonarqube scale sts/sonarqube-sonarqube --replicas=0
+# Antes de rodar a análise:
+kubectl --context minikube -n sonarqube scale sts/sonarqube-sonarqube --replicas=1
+kubectl --context minikube -n sonarqube rollout status sts/sonarqube-sonarqube
+~~~
+
 <details>
 <summary>Registro original da sessão de diagnóstico</summary>
 
