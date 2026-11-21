@@ -15,5 +15,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: apps
   syncPolicy:
+    automated:
+      prune: false # Evita exclusões automáticas nesta POC
+      selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+      - CreateNamespace=false # O namespace apps deve existir
