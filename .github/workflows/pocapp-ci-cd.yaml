@@ -190,7 +190,7 @@ jobs:
             ./app
 
       - name: Trivy - bloquear HIGH/CRITICAL
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: pocapp-scan:${{ steps.meta.outputs.tag }}
           format: table
