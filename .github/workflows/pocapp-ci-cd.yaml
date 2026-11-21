@@ -1,82 +1,132 @@
+
 name: POCAPP - CI & CD
 
-# CI em main, feature/*, tags v* e Pull Requests para main.
-# Feature/PR: testes, Sonar, build e Trivy (sem publicação).
-# Tag v*: testes, Sonar, build, Trivy e publicação no Harbor (sem deploy).
-# Main: testes, Sonar, build, Trivy, publicação e deploy via GitOps.
 on:
   push:
     branches:
       - main
       - 'feature/**'
-    # Tags v* executam CI independentemente do filtro paths (regra do GitHub).
-    tags:
-      - 'v*'
-    paths:
-      - 'app/**'
-      - 'helm/pocapp/**'
-      - '.github/workflows/pocapp-ci-cd.yaml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'app/**'
-      - 'helm/pocapp/**'
-      - '.github/workflows/pocapp-ci-cd.yaml'
-  workflow_dispatch:
 
-# O job gitops precisa escrever na main; os demais somente leem.
 permissions:
   contents: read
 
-# Evita duas publicações concorrentes para a mesma branch.
 concurrency:
   group: pocapp-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+
+  # ============================================================
+  # 1. VALIDATE - NODE.JS + HELM
+  # ============================================================
   validate:
     name: Node.js + Helm lint
-    runs-on: arc-minikube # Substituir pelo nome real do scale set ARC
+    runs-on: arc-minikube
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Instalar Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.17.3
+
       - name: Verificar sintaxe Node.js
         run: node --check app/src/server.js
+
       - name: Smoke test GET /healthz
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "Iniciando aplicação Node.js..."
+
           (cd app && node src/server.js) &
           APP_PID=$!
+
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          echo "Aguardando API responder na porta 3000..."
+
+          READY=false
+
           for i in {1..20}; do
-            if curl -fsS http://127.0.0.1:3000/healthz > /tmp/healthz.json; then break; fi
+            if curl --silent --fail \
+              http://127.0.0.1:3000/healthz \
+              > /tmp/healthz.json 2>/dev/null; then
+
+              echo "API respondeu na tentativa $i"
+              READY=true
+              break
+            fi
+
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "ERRO: Processo Node.js encerrou."
+              exit 1
+            fi
+
             sleep 1
           done
-          node -e 'const d=require("/tmp/healthz.json"); if(d.status!=="healthy") process.exit(1)'
+
+          if [[ "$READY" != "true" ]]; then
+            echo "ERRO: API não respondeu após 20 tentativas."
+            exit 1
+          fi
+
+          node -e '
+            const d = require("/tmp/healthz.json");
+            if (d.status !== "healthy") {
+              console.error("Healthcheck inválido:", d);
+              process.exit(1);
+            }
+            console.log("Healthcheck OK:", d);
+          '
+
       - name: Validar Helm Chart
         run: helm lint ./helm/pocapp
-      - name: Renderizar os templates
+
+      - name: Renderizar templates Helm
         run: |
-          helm template pocapp ./helm/pocapp --namespace apps > /tmp/pocapp-rendered.yaml
+          helm template pocapp ./helm/pocapp \
+            --namespace apps \
+            > /tmp/pocapp-rendered.yaml
+
           test -s /tmp/pocapp-rendered.yaml
 
+  # ============================================================
+  # 2. SONARQUBE + QUALITY GATE
+  # ============================================================
   sonar:
     name: SonarQube + Quality Gate
     needs: validate
     runs-on: arc-minikube
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validar ambiente
+        run: |
+          echo "Arquitetura:"
+          uname -m
+
+          echo "Node.js:"
+          which node
+          node --version
+
       - name: Analisar código no SonarQube
         uses: SonarSource/sonarqube-scan-action@v6.0.0
         with:
@@ -88,6 +138,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
       - name: Aguardar Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
         with:
@@ -97,16 +148,17 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
+  # ============================================================
+  # 3. DOCKER BUILD + TRIVY + HARBOR
+  # ============================================================
   image:
-    name: Docker Build + Trivy + Harbor (main/tags)
+    name: Docker Build + Trivy + Harbor
     needs: sonar
-    # Executa em TODOS os eventos que passaram nos testes/Sonar.
-    # Em feature e PR: apenas build + Trivy, sem credenciais do Harbor.
-    # Em tag v*: build + Trivy + push no Harbor, SEM deploy.
-    # Em main: build + Trivy + push no Harbor e libera o job GitOps.
     runs-on: arc-minikube
+
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,25 +171,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Tags Git v* mantêm o nome da release (ex.: v1.0.0).
-          # Main, feature e PR usam SHA para identificar o build.
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          else
-            TAG="sha-${GITHUB_SHA::12}"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Build da imagem local (sem publicar)
+          TAG="sha-${GITHUB_SHA::12}"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Imagem: $TAG"
+
+      - name: Build da imagem Docker
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          # Nome local independente do registry: funciona em feature/PR.
-          docker buildx build --load -t "pocapp-scan:$TAG" ./app
 
-      - name: Trivy - bloquear vulnerabilidades HIGH/CRITICAL
+          docker buildx build \
+            --load \
+            -t "pocapp-scan:$TAG" \
+            ./app
+
+      - name: Trivy - bloquear HIGH/CRITICAL
         uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: pocapp-scan:${{ steps.meta.outputs.tag }}
@@ -147,21 +199,17 @@ jobs:
           vuln-type: 'os,library'
           severity: 'HIGH,CRITICAL'
 
-      - name: Login no Harbor (somente main ou tag v*)
-        # PR/feature/dispatch não recebem credenciais do registry.
-        if: >-
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      # Publicação somente na branch main
+      - name: Login no Harbor
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ${{ vars.HARBOR_REGISTRY }}
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
-      - name: Publicar no Harbor (somente main ou tag v*)
-        if: >-
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      - name: Publicar imagem no Harbor
+        if: github.ref == 'refs/heads/main'
         env:
           REGISTRY: ${{ vars.HARBOR_REGISTRY }}
           PROJECT: ${{ vars.HARBOR_PROJECT }}
@@ -169,71 +217,99 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Publicar imagem é diferente de fazer deploy.
+
           IMAGE="$REGISTRY/$PROJECT/healthz-api:$TAG"
+
+          echo "Publicando imagem: $IMAGE"
+
           docker tag "pocapp-scan:$TAG" "$IMAGE"
           docker push "$IMAGE"
 
+  # ============================================================
+  # 4. GITOPS - ATUALIZAR HELM VALUES
+  # ============================================================
   gitops:
-    name: Atualizar Git na main (Argo CD faz deploy)
+    name: GitOps - Atualizar imagem no Helm
     needs: image
-    # Apenas main altera values.yaml; tags publicadas não fazem deploy.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    if: github.ref == 'refs/heads/main'
+
     runs-on: arc-minikube
+
     permissions:
-      contents: write # Necessário para git push usando GITHUB_TOKEN
+      contents: write
+
     steps:
-      - name: Checkout da main atual
+      - name: Checkout da main
         uses: actions/checkout@v4
         with:
           ref: main
           persist-credentials: true
-      - name: Instalar Python para editar YAML
+
+      - name: Instalar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Instalar biblioteca que preserva formatação YAML
+
+      - name: Instalar ruamel.yaml
         run: python -m pip install 'ruamel.yaml==0.18.10'
-      - name: Alterar apenas image.repository e image.tag
+
+      - name: Atualizar imagem no values.yaml
         env:
           REGISTRY: ${{ vars.HARBOR_REGISTRY }}
           PROJECT: ${{ vars.HARBOR_PROJECT }}
           TAG: ${{ needs.image.outputs.tag }}
         shell: bash
         run: |
-          # ruamel.yaml mantém comentários e a estrutura do values.yaml.
-          # Não altera os outros valores do Helm (service, probes, httpRoute etc.).
+          set -euo pipefail
+
           python - <<'PY'
           import os
           from pathlib import Path
           from ruamel.yaml import YAML
 
-          path = Path('helm/pocapp/values.yaml')
+          path = Path("helm/pocapp/values.yaml")
+
           yaml = YAML()
           yaml.preserve_quotes = True
-          with path.open(encoding='utf-8') as f:
+
+          with path.open(encoding="utf-8") as f:
               values = yaml.load(f)
-          values['image']['repository'] = (
-              f"{os.environ['REGISTRY']}/{os.environ['PROJECT']}/healthz-api"
+
+          values["image"]["repository"] = (
+              f"{os.environ['REGISTRY']}/"
+              f"{os.environ['PROJECT']}/healthz-api"
           )
-          values['image']['tag'] = os.environ['TAG']
-          with path.open('w', encoding='utf-8') as f:
+
+          values["image"]["tag"] = os.environ["TAG"]
+
+          with path.open("w", encoding="utf-8") as f:
               yaml.dump(values, f)
+
+          print("Imagem atualizada no Helm values.yaml")
           PY
+
       - name: Commit e push na main
         env:
           TAG: ${{ needs.image.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
+
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email \
+            '41898282+github-actions[bot]@users.noreply.github.com'
+
           git add helm/pocapp/values.yaml
+
           if git diff --cached --quiet; then
-            echo 'A imagem já está configurada; nada para publicar.'
+            echo "Imagem já configurada. Nenhuma alteração necessária."
             exit 0
           fi
+
           git commit -m "ci(pocapp): deploy image $TAG"
-          # Falha se a main estiver protegida ou tiver avançado; não faz force push.
+
           git push origin HEAD:main
-          # O Argo CD com automated sync detectará este commit e aplicará o chart.
+
+          echo "GitOps atualizado."
+          echo "Argo CD realizará a sincronização automática."
