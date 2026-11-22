@@ -63,7 +63,7 @@ O Minikube chegou a 7,26 GiB de 8 GiB com um job ARC ativo. O PostgreSQL do Harb
 
 - Publique os timeouts e `trivy.enabled: false` na revisão Git lida pelo Argo CD e sincronize a Application `harbor`. O chart habilita o Trivy por padrão se o bloco for omitido. Mantenha o PostgreSQL e o Redis, que são dependências do Harbor. [Values do Harbor](../infra/gitops/helm-values/harbor.yaml)
 - O ajuste de observabilidade passa os intervalos padrão de scrape e avaliação do Prometheus de 30s para 60s. O chart foi renderizado com os novos valores. Após o sync de `obs-prometheus`, meça o efeito no consumo. Alvos com intervalo próprio podem continuar coletando com outra frequência. [Values do Prometheus](../infra/gitops/observability-minikube/values/kube-prometheus-stack.yaml)
-- Para obter folga imediata fora das janelas de análise, o SonarQube é o maior candidato, com cerca de 1,71 GiB na coleta. A política do StatefulSet retém o PVC ao reduzir réplicas. Se precisar manter a análise disponível, pausar Loki e Alloy juntos é outra opção, com cerca de 400 MiB de consumo observado e interrupção da coleta de logs.
+- Para obter folga imediata fora das janelas de análise, o SonarQube é o maior candidato, com cerca de 1,71 GiB na coleta. A política do StatefulSet retém o PVC ao reduzir réplicas. Com o SonarQube disponível, pausar Loki e Alloy interrompe a coleta de logs. Confira antes a política do PVC do Loki, conforme o contorno abaixo.
 
 Para pausar o SonarQube temporariamente e reativá-lo antes do próximo pipeline, use os comandos abaixo. Aguarde o rollout antes de enviar um job de análise.
 
@@ -73,6 +73,27 @@ kubectl --context minikube -n sonarqube scale sts/sonarqube-sonarqube --replicas
 kubectl --context minikube -n sonarqube scale sts/sonarqube-sonarqube --replicas=1
 kubectl --context minikube -n sonarqube rollout status sts/sonarqube-sonarqube
 ~~~
+
+## 6. Primeiro deploy da POCAPP e pressão após retirar o ARC
+
+O Docker registrou 7,02 GiB de 8 GiB em uso e `OOMKilled=true` no histórico do contêiner. O cgroup registrava três processos mortos por OOM. A leitura de PSI com janela de 10 segundos mostrou espera por CPU de 96,38%. A API e o containerd tiveram respostas intermitentes. A POCAPP falhava porque a imagem local `healthz-api:1.0.0` estava ausente e o kubelet tentou baixá-la de `docker.io/library`.
+
+O StatefulSet do Loki tinha `whenScaled: Delete`. Para pausar os logs, desabilitei o auto-sync de `obs-loki` e `obs-alloy`, alterei a retenção do Loki para `Retain` e confirmei que o PVC `storage-loki-0` permaneceu `Bound`. O Alloy recebeu um seletor temporário para um rótulo ausente no nó e o Loki e seu Gateway foram reduzidos a zero réplicas. O chart 6.18.0 volta a emitir `Delete` por padrão. O ajuste versionado usa `enableStatefulSetAutoDeletePVC: false` para que o Kubernetes use a retenção padrão `Retain`. [Values do Loki](../infra/gitops/observability-minikube/values/loki.yaml)
+
+Para reativar os logs quando houver folga, publique os values do Loki com a retenção corrigida, depois restaure as réplicas e remova o seletor temporário do Alloy. Reative o auto-sync após conferir as políticas e o PVC.
+
+~~~bash
+kubectl --context minikube -n observability scale sts/loki deploy/loki-gateway --replicas=1
+kubectl --context minikube -n observability rollout status sts/loki --timeout=240s
+kubectl --context minikube -n observability patch daemonset alloy --type merge \
+  -p '{"spec":{"template":{"spec":{"nodeSelector":{"pocdevopsmirante.dev/collect-logs":null}}}}}'
+for app in obs-loki obs-alloy; do
+  kubectl --context minikube -n argocd patch application "$app" --type merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"enabled":true}}}}'
+done
+~~~
+
+O workflow passou a construir e escanear a imagem em um runner hospedado. O runner local entrega o artefato ao Harbor ou carrega o arquivo diretamente no Minikube. [CI/CD da POCAPP](../app/Runbookapp.md#3-configurar-o-cicd)
 
 <details>
 <summary>Registro original da sessão de diagnóstico</summary>

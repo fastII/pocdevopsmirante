@@ -21,6 +21,8 @@ singleBinary:
   persistence:
     enabled: true
     size: 5Gi
+    # O chart 6.18.0 usa Delete nas duas operações quando esta opção está ativa.
+    enableStatefulSetAutoDeletePVC: false
   resources:
     requests:
       cpu: 100m

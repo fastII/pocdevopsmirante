@@ -15,14 +15,14 @@ Na instalação original, as Applications foram provisionadas individualmente pe
 ~~~bash
 git clone https://github.com/fastII/pocdevopsmirante.git
 cd pocdevopsmirante
-bash scripts/provision-minikube.sh --repositorio-privado --acesso-corporativo
+bash scripts/provision-minikube.sh --repositorio-privado --servir
 ~~~
 
 O token do Argo CD precisa de leitura no repositório. O Git da máquina já deve estar autenticado para clonar e conferir a revisão. A instalação nova da infraestrutura funciona com os prompts, sem arquivos SOPS, chave age ou backups de outra máquina. Para automatizar o preenchimento, forneça as variáveis listadas em `--help`. Por exemplo, `SONAR_MONITORING_PASSCODE` fornece o passcode do SonarQube.
 
 O runner `self-hosted` é configurado à parte quando houver necessidade de rodar CI/CD. Para instalar o ARC, acrescente `--com-arc` e tenha a GitHub App, seus IDs e o PEM guardado fora do Git. Os jobs precisam selecionar o runner pretendido pelo `runs-on`. [Preparar a GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md)
 
-O [script](scripts/provision-minikube.sh) prepara o Minikube, pede as credenciais em falta e executa o provisionamento na ordem abaixo. Em ambiente corporativo sem permissão para editar `/etc/hosts`, `--acesso-corporativo` executa `minikube service traefik -n traefik --url`. Use o hostname da rota e a porta encaminhada para HTTPS. As portas podem mudar a cada execução. Se houver túnel, mantenha o terminal aberto. `--servir` é a alternativa de porta fixa `8443`. [Acesso a serviços no Minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/)
+O [script](scripts/provision-minikube.sh) prepara o Minikube, pede as credenciais em falta e executa o provisionamento na ordem abaixo. `--servir` usa a porta fixa `8443` para o navegador sem exigir edição de `/etc/hosts`. Mantenha o terminal aberto. `--acesso-corporativo` continua disponível para executar `minikube service traefik -n traefik --url`, com portas que podem mudar a cada execução. O runner na máquina do Minikube abre seu próprio acesso ao SonarQube quando `SONAR_HOST_URL` está ausente. [Acesso a serviços no Minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/) · [Configuração do CI/CD](app/Runbookapp.md#3-configurar-o-cicd)
 
 | Grupo | Quem cria as Applications |
 | --- | --- |
@@ -36,7 +36,7 @@ O `platform-root` cria a Application `pocapp`. A própria filha usa auto-sync pa
 
 - Rode `bash scripts/provision-minikube.sh --help` para ver as variáveis de automação. Use `--sem-observabilidade` para omitir essa etapa quando houver pouca folga de memória.
 - Com os values padrão da POCAPP, o script constrói a imagem no nó. Se `main` já aponta para um registry, a tag precisa estar disponível e acessível no Minikube. Para reconstruir o cluster com uma imagem preservada, passe `POCAPP_IMAGE_ARCHIVE` com um archive da referência esperada e use política de pull `IfNotPresent` ou `Never`. Para registry privado, passe `POCAPP_DOCKER_CONFIG` e declare o nome do Secret em `imagePullSecrets`. [Imagem e CI/CD da POCAPP](app/Runbookapp.md)
-- GitHub Actions ainda exige as variáveis e os Secrets do workflow. O runner `self-hosted` precisa alcançar o SonarQube e o Harbor. O encaminhamento local atende processos na mesma máquina. [Configuração do CI/CD](app/Runbookapp.md#3-configurar-o-cicd)
+- GitHub Actions exige `SONAR_TOKEN`. O modo `harbor` usa as variáveis e os Secrets do registry. O modo `minikube-local` carrega a imagem pronta no perfil do runner. [Configuração do CI/CD](app/Runbookapp.md#3-configurar-o-cicd)
 
 Depois do provisionamento, acesse `https://argocd.localhost:PORTA_HTTPS` com a porta anunciada, ou `8443` com `--servir`. O Argo CD atende HTTP interno no Service `argocd-server:80`. O Traefik termina TLS no listener `websecure`, e a Application `platform-routes` publica o HTTPRoute. [Values do Argo CD](infra/gitops/helm-values/argocd-resources.yaml) · [HTTPRoute do Argo CD](infra/gitops/routes/argocd-httproute.yaml) · [Values do Traefik](infra/gitops/helm-values/traefik.yaml)
 
