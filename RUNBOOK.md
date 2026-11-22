@@ -6,29 +6,60 @@ Na instalação original, as Applications foram provisionadas individualmente pe
 
 ## Provisionamento pelo script
 
-Com o Docker Desktop aberto, instale Bash, Git, Minikube, kubectl, Helm, OpenSSL, jq e o yq v4 de mikefarah. Para incluir ARC, tenha a GitHub App instalada no repositório da POC, seus IDs e a chave PEM em um local seguro fora do Git. [Preparar a GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md)
+### Primeira instalação em outra máquina
+
+1. Instale Bash, Git, Minikube, kubectl, Helm, OpenSSL, jq e o yq v4 de mikefarah. Inicie o Docker.
+2. Com seu próprio acesso ao GitHub, clone o repositório da POC e entre na pasta.
+3. Execute o Bash abaixo. Como o repositório é privado, o script solicita usuário e token HTTPS de leitura para o Argo CD, além das senhas locais de Harbor e Grafana e do passcode de monitoramento do SonarQube. A pessoa pode usar credenciais próprias. TLS é gerado localmente.
 
 ~~~bash
-bash scripts/provision-minikube.sh --servir
+git clone https://github.com/fastII/pocdevopsmirante.git
+cd pocdevopsmirante
+bash scripts/provision-minikube.sh --repositorio-privado --acesso-corporativo
 ~~~
 
-O [script](scripts/provision-minikube.sh) prepara o Minikube, pede as credenciais em falta e executa o provisionamento na ordem abaixo. Com `--servir`, mantém aberto o encaminhamento HTTPS do Traefik. Encerre-o com `Ctrl+C`.
+O token do Argo CD precisa de leitura no repositório. O Git da máquina já deve estar autenticado para clonar e conferir a revisão. A instalação nova da infraestrutura funciona com os prompts, sem arquivos SOPS, chave age ou backups de outra máquina.
+
+O runner `self-hosted` é configurado à parte quando houver necessidade de rodar CI/CD. Para instalar o ARC, acrescente `--com-arc` e tenha a GitHub App, seus IDs e o PEM guardado fora do Git. Os jobs precisam selecionar o runner pretendido pelo `runs-on`. [Preparar a GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md)
+
+O [script](scripts/provision-minikube.sh) prepara o Minikube, pede as credenciais em falta e executa o provisionamento na ordem abaixo. Em ambiente corporativo sem permissão para editar `/etc/hosts`, `--acesso-corporativo` executa `minikube service traefik -n traefik --url`. Use o hostname da rota e a porta encaminhada para HTTPS. As portas podem mudar a cada execução. Se houver túnel, mantenha o terminal aberto. `--servir` é a alternativa de porta fixa `8443`. [Acesso a serviços no Minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/)
 
 | Grupo | Quem cria as Applications |
 | --- | --- |
 | Traefik, Harbor, SonarQube, Kyverno, políticas, rotas da plataforma e POCAPP | `platform-root` lê `infra/gitops/applications/` |
-| ARC | O script aplica o projeto, o controller e o scale set |
+| ARC | Com `--com-arc`, o script aplica o projeto, o controller e o scale set |
 | Observabilidade | O script aplica o projeto e as Applications de Prometheus/Grafana, Loki, Alloy e rota do Grafana |
 
 Dentro da observabilidade, apenas o Grafana é publicado por HTTPRoute. As rotas do Argo CD, Harbor, SonarQube e POCAPP fazem parte da plataforma.
 
 O `platform-root` cria a Application `pocapp`. A própria filha usa auto-sync para renderizar `helm/pocapp` e implantar no namespace `apps`. Os AppProjects continuam separados. Eles autorizam os repositórios, destinos e recursos usados pelas Applications. [Application POCAPP](infra/gitops/applications/pocapp.yaml)
 
-- Rode `bash scripts/provision-minikube.sh --help` para ver as variáveis de automação. Reexecuções reutilizam Secrets existentes. Em um Mac com pouca folga, use `--sem-arc` ou `--sem-observabilidade` para omitir essas etapas em um cluster novo.
+- Rode `bash scripts/provision-minikube.sh --help` para ver as variáveis de automação. Use `--sem-observabilidade` para omitir essa etapa quando houver pouca folga de memória.
 - Com os values padrão da POCAPP, o script constrói a imagem no nó. Se `main` já aponta para um registry, a tag precisa estar disponível e acessível no Minikube. Para reconstruir o cluster com uma imagem preservada, passe `POCAPP_IMAGE_ARCHIVE` com um archive da referência esperada e use política de pull `IfNotPresent` ou `Never`. Para registry privado, passe `POCAPP_DOCKER_CONFIG` e declare o nome do Secret em `imagePullSecrets`. [Imagem e CI/CD da POCAPP](app/Runbookapp.md)
-- GitHub Actions ainda exige as variáveis e os Secrets do workflow. O runner hospedado pelo GitHub precisa conseguir acessar o Harbor para fazer push. As URLs `.localhost` do encaminhamento são para acesso no Mac. [Configuração do CI/CD](app/Runbookapp.md#3-configurar-o-cicd)
+- GitHub Actions ainda exige as variáveis e os Secrets do workflow. O runner `self-hosted` precisa alcançar o SonarQube e o Harbor. O encaminhamento local atende processos na mesma máquina. [Configuração do CI/CD](app/Runbookapp.md#3-configurar-o-cicd)
 
-Depois do provisionamento, acesse `https://argocd.localhost:8443`. O Argo CD atende HTTP interno no Service `argocd-server:80`. O Traefik termina TLS no listener `websecure`, e a Application `platform-routes` publica o HTTPRoute. [Values do Argo CD](infra/gitops/helm-values/argocd-resources.yaml) · [HTTPRoute do Argo CD](infra/gitops/routes/argocd-httproute.yaml) · [Values do Traefik](infra/gitops/helm-values/traefik.yaml)
+Depois do provisionamento, acesse `https://argocd.localhost:PORTA_HTTPS` com a porta anunciada, ou `8443` com `--servir`. O Argo CD atende HTTP interno no Service `argocd-server:80`. O Traefik termina TLS no listener `websecure`, e a Application `platform-routes` publica o HTTPRoute. [Values do Argo CD](infra/gitops/helm-values/argocd-resources.yaml) · [HTTPRoute do Argo CD](infra/gitops/routes/argocd-httproute.yaml) · [Values do Traefik](infra/gitops/helm-values/traefik.yaml)
+
+### Reexecutar ou reconstruir
+
+- **Perfil existente.** Reexecute o script para reconciliar a instalação. Ele reutiliza Secrets encontrados e solicita apenas os ausentes. As sincronizações manuais usam `prune: false`; as Applications automáticas mantêm suas próprias políticas. Confira os PVCs e suas políticas antes de mudanças que removam volumes do estado desejado.
+- **Perfil excluído.** Forneça as credenciais por prompt, variáveis ou backups SOPS. Para reativar um repositório Git privado, configure o acesso do Git local e forneça as credenciais HTTPS ao Argo CD de acordo com `--help`. A opção SOPS cobre os Secrets abaixo; TLS, ARC e credenciais de pull têm suas próprias etapas.
+
+| Arquivo SOPS | Secret esperado | Chaves |
+| --- | --- | --- |
+| `harbor.enc.yaml` | `harbor/harbor-admin` | `HARBOR_ADMIN_PASSWORD` |
+| `sonarqube.enc.yaml` | `sonarqube/sonarqube-monitoring` | `monitoringPasscode` |
+| `grafana.enc.yaml` | `observability/grafana-admin` | `admin-user`, `admin-password` |
+
+Salve cada arquivo como um único Secret SOPS. A chave privada age deve ficar fora do Git e do Minikube. `SECRETS_DIR` aponta para a pasta dos backups e tem `infra/secrets` como padrão. A restauração pula Secrets existentes e deixa os backups ausentes para o fluxo de prompts. [SOPS e age](https://getsops.io/docs/)
+
+~~~bash
+export SOPS_AGE_KEY_FILE="/caminho/seguro/keys.txt"
+export SECRETS_DIR="/caminho/seguro/backups-sops"
+bash scripts/provision-minikube.sh --restaurar-secrets --repositorio-privado --acesso-corporativo
+~~~
+
+Antes de excluir o perfil, confirme que os backups podem ser abertos com a chave armazenada fora do cluster. Imagens e metadados do Harbor, histórico do SonarQube e dashboards criados manualmente exigem exportação ou backup próprio. Restaurar um Secret recupera credenciais do bootstrap, sem recuperar os dados dos volumes.
 
 <details>
 <summary>Arquitetura e provisionamento manual</summary>

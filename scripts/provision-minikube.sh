@@ -12,16 +12,18 @@ observability=true
 serve=false
 corporate_access=false
 restore_secrets=false
+private_repo=false
 secrets_dir="${SECRETS_DIR:-infra/secrets}"
 
 usage() {
   cat <<'HELP'
 Uso: bash scripts/provision-minikube.sh [--com-arc] [--sem-observabilidade]
-       [--restaurar-secrets] [--servir | --acesso-corporativo]
+       [--repositorio-privado] [--restaurar-secrets] [--servir | --acesso-corporativo]
 
 Instala a plataforma no perfil minikube. Reutiliza os Secrets existentes.
   --com-arc              Instala o ARC no cluster. Por padrão usa-se o runner externo.
   --sem-arc              Mantém o ARC fora deste provisionamento (padrão).
+  --repositorio-privado Solicita usuário e token HTTPS para o Argo CD.
   --restaurar-secrets    Lê backups SOPS de Harbor, SonarQube e Grafana.
                         Configure SECRETS_DIR e SOPS_AGE_KEY_FILE.
   --servir              Mantém o port-forward HTTPS na porta local 8443.
@@ -40,6 +42,7 @@ while (( $# )); do
   case "$1" in
     --com-arc) arc=true ;;
     --sem-arc) arc=false ;;
+    --repositorio-privado) private_repo=true ;;
     --sem-observabilidade) observability=false ;;
     --restaurar-secrets) restore_secrets=true ;;
     --servir) serve=true ;;
@@ -79,11 +82,14 @@ docker info >/dev/null || die 'Inicie o Docker Desktop.'
 repo=$(yq -r '.spec.source.repoURL' infra/gitops/bootstrap/root-app.yaml)
 branch=$(yq -r '.spec.source.targetRevision' infra/gitops/bootstrap/root-app.yaml)
 log "Conferindo a revisão que o Argo CD vai ler ($branch)"
-git fetch --no-tags "$repo" "$branch"
+git fetch --no-tags "$repo" "$branch" ||
+  die "Confirme o acesso do Git desta máquina a $repo ($branch). A opção --repositorio-privado configura o acesso separado do Argo CD."
 revision=$(git rev-parse FETCH_HEAD)
-git diff --quiet "$revision" -- infra/gitops infra/security helm/pocapp app ||
+# Documentação local em edição não muda os manifests nem o build.
+gitops_paths=(infra/gitops infra/security helm/pocapp app ':(exclude,glob)**/*.md')
+git diff --quiet "$revision" -- "${gitops_paths[@]}" ||
   die "Publique os manifests e o código da aplicação em $branch e alinhe o clone com essa revisão. SHA remoto: $revision."
-untracked=$(git ls-files --others --exclude-standard -- infra/gitops infra/security helm/pocapp app)
+untracked=$(git ls-files --others --exclude-standard -- "${gitops_paths[@]}")
 [[ -z "$untracked" ]] || die 'Há arquivos não versionados nas pastas do provisionamento. Confira git status.'
 printf 'SHA GitOps: %s\n' "$revision"
 
@@ -269,7 +275,8 @@ helm --kube-context "$profile" upgrade --install argocd argo/argo-cd --version 1
   --wait --timeout 10m
 k wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
 k apply -f infra/gitops/projects/
-if [[ -n "${GITOPS_USERNAME:-}${GITOPS_TOKEN:-}" ]] && ! secret_exists argocd provision-gitops-repo; then
+if { "$private_repo" || [[ -n "${GITOPS_USERNAME:-}${GITOPS_TOKEN:-}" ]]; } &&
+  ! secret_exists argocd provision-gitops-repo; then
   prompt GITOPS_USERNAME 'Usuário Git HTTPS'
   prompt GITOPS_TOKEN 'Token Git HTTPS' secret
   printf '%s' "$GITOPS_USERNAME" > "$scratch/username"

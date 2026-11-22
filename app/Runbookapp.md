@@ -34,7 +34,7 @@ Para deploy via Harbor, confirme o projeto, a tag e o acesso do runtime ao regis
 | Variables | SONAR_HOST_URL, HARBOR_REGISTRY, HARBOR_PROJECT |
 | Secrets | SONAR_TOKEN, HARBOR_USERNAME, HARBOR_PASSWORD |
 
-Os jobs de validação e análise Sonar executam no runner arc-minikube. O build e o Trivy usam ubuntu-latest. Em main, esse runner recebe a tarefa de publicar no Harbor, e o job GitOps atualiza image.repository e image.tag em main. A URL do SonarQube deve estar acessível no pod ARC. O endpoint do Harbor precisa estar acessível no runner hospedado pelo GitHub. [Workflow da POCAPP](../.github/workflows/pocapp-ci-cd.yaml)
+O job de validação usa `ubuntu-latest`. Os jobs de análise Sonar, build com Trivy, publicação no Harbor e atualização do GitOps usam `self-hosted`. O runner precisa alcançar o SonarQube e o Harbor e ter acesso ao Docker. Em `main`, o job GitOps atualiza `image.repository` e `image.tag`. [Workflow da POCAPP](../.github/workflows/pocapp-ci-cd.yaml)
 
 ## 4. Implantar e conferir
 

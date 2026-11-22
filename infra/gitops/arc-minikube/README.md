@@ -2,7 +2,7 @@
 
 [Voltar ao runbook](../../../RUNBOOK.md) · [Configurar a GitHub App](01-install-arc-github.md)
 
-O script de provisionamento já instala o ARC após a plataforma. Use os passos abaixo para instalar o ARC separadamente, por exemplo após provisionar com `--sem-arc`. [Provisionamento pelo script](../../../RUNBOOK.md#provisionamento-pelo-script)
+O script instala o ARC após a plataforma quando executado com `--com-arc`. Use os passos abaixo para instalar o ARC separadamente. [Provisionamento pelo script](../../../RUNBOOK.md#provisionamento-pelo-script)
 
 ## 1. Preparar o repositório OCI
 
