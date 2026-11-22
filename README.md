@@ -44,7 +44,7 @@ flowchart TD
 | Argo CD e Helm | Reconciliam os manifests publicados em `main`. `platform-root` cria as Applications de Traefik, Harbor, SonarQube, Kyverno, políticas, rotas e POCAPP |
 | Traefik e Gateway API | O listener HTTPS termina TLS. As `HTTPRoute` encaminham o tráfego entre namespaces |
 | Harbor e SonarQube | Registry OCI e análise de código |
-| Kyverno | Políticas de admissão declarativas. A regra atual audita imagens sem tag explícita ou com `latest` |
+| Kyverno | Políticas de admissão declarativas. A regra bloqueia imagens sem tag explícita ou com `:latest` no namespace `apps` |
 | Observabilidade | Prometheus e Alertmanager coletam métricas e avaliam alertas. Alloy coleta logs, Loki armazena e Grafana consulta os dados |
 | SOPS e age | Backups criptografados de Secrets |
 | ARC | Execução opcional de runners do GitHub Actions no cluster |

@@ -4,10 +4,8 @@ kind: ValidatingPolicy
 metadata:
   name: pocapp-disallow-latest
 spec:
-  # Inicialmente apenas audita violações.
-  # Após os testes, alterar para Deny.
   validationActions:
-    - Audit
+    - Deny
 
   # Aplicar somente aos Pods do namespace apps.
   matchConstraints:
