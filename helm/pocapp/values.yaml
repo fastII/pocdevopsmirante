@@ -7,11 +7,11 @@ image:
 
 # O workflow com deploy_target=canary preenche a imagem e inicia com peso 0.
 canary:
-  enabled: false
+  enabled: true
   weight: 0
   image:
-    repository: ""
-    tag: ""
+    repository: "host.docker.internal:8081/poc/healthz-api"
+    tag: "sha-308afbbaf799"
     pullPolicy: ""
 
 service:
