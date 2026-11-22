@@ -61,6 +61,19 @@ bash scripts/provision-minikube.sh --restaurar-secrets --repositorio-privado --a
 
 Antes de excluir o perfil, confirme que os backups podem ser abertos com a chave armazenada fora do cluster. Imagens e metadados do Harbor, histórico do SonarQube e dashboards criados manualmente exigem exportação ou backup próprio. Restaurar um Secret recupera credenciais do bootstrap, sem recuperar os dados dos volumes.
 
+## Melhorias da POC
+
+- **Recuperação opcional de credenciais com SOPS e age.** Use o modo de restauração quando precisar recuperar as credenciais de um perfil anterior. Para uma instalação nova em outra máquina, o script já solicita credenciais próprias. Mantenha a chave age fora do Git e valide a descriptografia antes de excluir um perfil. [Reexecutar ou reconstruir](#reexecutar-ou-reconstruir)
+- **Provisionamento com poucos recursos.** Use o driver Docker com o runtime `containerd` no nó Kubernetes. Essa é a configuração já usada pelo script para um perfil novo. O Docker continua executando o nó, e o containerd executa os pods dentro dele. Se a memória continuar apertada, comece com `--sem-observabilidade`, mantenha o ARC desativado se já usa um runner externo e acompanhe `docker stats` antes de adicionar os demais componentes. [Driver Docker do Minikube](https://minikube.sigs.k8s.io/docs/drivers/docker/) · [Evidências de capacidade](evidence/Dificuldades.md)
+
+### Aprovar mudanças antes de entrar em main
+
+1. Abra PR de uma branch de trabalho para `main`. Configure validações no evento `pull_request`, como os checks do Node.js e o `helm lint`.
+2. Proteja `main` com uma regra de branch ou ruleset. Exija PR, pelo menos uma aprovação e os checks obrigatórios aprovados antes do merge. [Regras de proteção no GitHub](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+3. Antes de ativar o bloqueio de push direto, adapte os workflows de deploy e rollback para publicar a mudança de tag em uma branch e abrir um PR. Mantenha a validação obrigatória nos PRs de GitOps e evite disparar um novo build de imagem só porque o PR atualizou a tag no Helm values. Após o merge, o Argo CD reconcilia o estado publicado em `main`. [Workflow de CI/CD](.github/workflows/pocapp-ci-cd.yaml) · [Workflow de rollback](.github/workflows/rollback-pocapp.yaml)
+
+Essa proteção é uma melhoria proposta. Hoje os dois workflows ainda fazem push direto para `main`.
+
 <details>
 <summary>Arquitetura e provisionamento manual</summary>
 
