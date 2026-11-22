@@ -41,7 +41,7 @@ expose:
     name: harbor
     ports:
       httpPort: 80
-externalURL: https://harbor.local
+externalURL: http://harbor.localhost:8080
 existingSecretAdminPassword: harbor-admin
 existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
 persistence:

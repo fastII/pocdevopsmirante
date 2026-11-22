@@ -356,7 +356,7 @@ jobs:
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         uses: docker/login-action@v3
         with:
-          registry: ${{ vars.HARBOR_REGISTRY }}
+          registry: harbor.localhost:8080
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
