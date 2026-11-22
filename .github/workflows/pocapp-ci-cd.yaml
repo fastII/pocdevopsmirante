@@ -6,6 +6,17 @@ on:
     branches:
       - main
       - 'feature/**'
+    paths-ignore:
+      - 'helm/pocapp/values.yaml'
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: "Destino da imagem publicada em main"
+        type: choice
+        options:
+          - canary
+          - stable
+        default: canary
 
 permissions:
   contents: read
@@ -81,7 +92,7 @@ jobs:
 
           node -e '
             const d = require("/tmp/healthz.json");
-            if (d.status !== "healthy") {
+            if (d.status !== "healthy" || !d.version) {
               console.error("Healthcheck inválido:", d);
               process.exit(1);
             }
@@ -98,6 +109,13 @@ jobs:
             > /tmp/pocapp-rendered.yaml
 
           test -s /tmp/pocapp-rendered.yaml
+
+          helm template pocapp ./helm/pocapp --namespace apps \
+            --set canary.enabled=true,canary.weight=10 \
+            --set-string canary.image.tag=sha-candidate \
+            > /tmp/pocapp-canary-rendered.yaml
+
+          test -s /tmp/pocapp-canary-rendered.yaml
 
   # ============================================================
   # 2. SONARQUBE + QUALITY GATE
@@ -236,6 +254,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     runs-on: self-hosted
+    concurrency:
+      group: pocapp-gitops-main
+      cancel-in-progress: false
 
     permissions:
       contents: write
@@ -260,6 +281,7 @@ jobs:
           REGISTRY: ${{ vars.HARBOR_REGISTRY }}
           PROJECT: ${{ vars.HARBOR_PROJECT }}
           TAG: ${{ needs.image.outputs.tag }}
+          DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -277,12 +299,20 @@ jobs:
           with path.open(encoding="utf-8") as f:
               values = yaml.load(f)
 
-          values["image"]["repository"] = (
-              f"{os.environ['REGISTRY']}/"
-              f"{os.environ['PROJECT']}/healthz-api"
-          )
+          canary = values["canary"]
+          if canary["enabled"]:
+              raise SystemExit("Há um canary ativo. Finalize a promoção ou o aborto pelo Git.")
 
-          values["image"]["tag"] = os.environ["TAG"]
+          image = {
+              "repository": f"{os.environ['REGISTRY']}/{os.environ['PROJECT']}/healthz-api",
+              "tag": os.environ["TAG"],
+          }
+          if os.environ["DEPLOY_TARGET"] == "canary":
+              canary["image"].update(image)
+              canary["enabled"] = True
+              canary["weight"] = 0
+          else:
+              values["image"].update(image)
 
           with path.open("w", encoding="utf-8") as f:
               yaml.dump(values, f)
@@ -293,6 +323,7 @@ jobs:
       - name: Commit e push na main
         env:
           TAG: ${{ needs.image.outputs.tag }}
+          DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -308,7 +339,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "ci(pocapp): deploy image $TAG"
+          git commit -m "ci(pocapp): deploy $DEPLOY_TARGET image $TAG"
 
           git push origin HEAD:main
 

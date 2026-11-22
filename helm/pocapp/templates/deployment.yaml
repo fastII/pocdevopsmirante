@@ -1,78 +1,100 @@
+{{- range (include "pocapp.workloads" . | fromYamlArray) }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "pocapp.fullname" . }}
+  name: {{ .name }}
+  {{- if .canary }}
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
+  {{- end }}
   labels:
-    {{- include "pocapp.labels" . | nindent 4 }}
+    {{- include "pocapp.commonLabels" $ | nindent 4 }}
+    {{- .selector | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- if .canary }}
+  replicas: 1
+  {{- else if not $.Values.autoscaling.enabled }}
+  replicas: {{ $.Values.replicaCount }}
+  {{- end }}
+  {{- if $.Values.canary.enabled }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   {{- end }}
   selector:
     matchLabels:
-      {{- include "pocapp.selectorLabels" . | nindent 6 }}
+      {{- .selector | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "pocapp.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
+        {{- include "pocapp.commonLabels" $ | nindent 8 }}
+        {{- .selector | nindent 8 }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "pocapp.serviceAccountName" . }}
-      {{- with .Values.podSecurityContext }}
+      serviceAccountName: {{ include "pocapp.serviceAccountName" $ }}
+      {{- with $.Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ .Chart.Name }}
-          {{- with .Values.securityContext }}
+        - name: {{ $.Chart.Name }}
+          {{- with $.Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- $tag := .image.tag | default $.Chart.AppVersion }}
+          image: {{ printf "%s:%s" .image.repository $tag | quote }}
+          env:
+            - name: APP_VERSION
+              value: {{ $tag | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.targetPort }}
+              containerPort: {{ $.Values.service.targetPort }}
               protocol: TCP
-          {{- with .Values.livenessProbe }}
+          {{- with $.Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.readinessProbe }}
+          {{- with $.Values.readinessProbe }}
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.resources }}
+          {{- with $.Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.volumeMounts }}
+          {{- with $.Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.volumes }}
+      {{- with $.Values.volumes }}
       volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.nodeSelector }}
+      {{- with $.Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with $.Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with $.Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

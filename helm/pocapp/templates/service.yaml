@@ -1,15 +1,23 @@
+{{- range (include "pocapp.workloads" . | fromYamlArray) }}
+---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "pocapp.fullname" . }}
+  name: {{ .name }}
+  {{- if .canary }}
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
+  {{- end }}
   labels:
-    {{- include "pocapp.labels" . | nindent 4 }}
+    {{- include "pocapp.commonLabels" $ | nindent 4 }}
+    {{- .selector | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ if .canary }}ClusterIP{{ else }}{{ $.Values.service.type }}{{ end }}
   ports:
-    - port: {{ .Values.service.port }}
+    - port: {{ $.Values.service.port }}
       targetPort: http
       protocol: TCP
       name: http
   selector:
-    {{- include "pocapp.selectorLabels" . | nindent 4 }}
+    {{- .selector | nindent 4 }}
+{{- end }}

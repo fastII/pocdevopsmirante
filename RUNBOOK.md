@@ -216,6 +216,8 @@ argocd app wait kyverno-policies --sync --health --timeout 180
 
 A POCAPP também usa auto-sync. Se a primeira tentativa falhar porque a imagem ainda está indisponível, ajuste a dependência e dispare um sync da filha. Com um Harbor novo, restaure ou publique a imagem esperada e confirme que o runtime do Minikube alcança o registry. Em projeto privado, configure o Secret de pull em `apps` e referencie-o nos values. Se a tag original não estiver disponível, publique no Git uma referência válida antes de sincronizar. [Imagem e CI/CD da POCAPP](app/Runbookapp.md)
 
+O primeiro deploy usa uma réplica estável. Com a versão estável saudável e folga no nó, ative o canary pelo Git ou pelo workflow manual e ajuste o peso na rota do Traefik. [Canary da POCAPP](app/Runbookapp.md#5-canary-com-traefik)
+
 ~~~bash
 argocd app wait pocapp --sync --health --timeout 300
 kubectl -n apps rollout status deployment/pocapp --timeout=180s

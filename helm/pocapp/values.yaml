@@ -6,6 +6,14 @@ image:
   pullPolicy: IfNotPresent
   tag: "1.0.0"
 
+# Ative após validar a versão estável. weight é a porcentagem no HTTPRoute.
+canary:
+  enabled: false
+  weight: 0
+  image:
+    repository: ""
+    tag: ""
+
 service:
   type: ClusterIP
   port: 80

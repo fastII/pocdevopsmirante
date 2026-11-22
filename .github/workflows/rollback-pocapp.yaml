@@ -14,7 +14,10 @@ permissions:
 
 jobs:
   rollback:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pocapp-gitops-main
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -36,6 +39,10 @@ jobs:
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
+          if [[ "$(yq '.canary.enabled' helm/pocapp/values.yaml)" == true ]]; then
+            echo 'Há um canary ativo. Encerre o canary pelo Git antes de restaurar a tag estável.' >&2
+            exit 1
+          fi
           yq -i '.image.tag = strenv(IMAGE_TAG)' \
             helm/pocapp/values.yaml
 
@@ -43,6 +50,8 @@ jobs:
           echo "Versão selecionada: $helm_version"
 
       - name: Commit e push
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email \
@@ -55,8 +64,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m \
-            "rollback(pocapp): restore image ${{ inputs.image_tag }}"
+          git commit -m "rollback(pocapp): restore image $IMAGE_TAG"
 
           git push origin HEAD:main
 

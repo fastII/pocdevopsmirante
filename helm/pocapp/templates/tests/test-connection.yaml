@@ -11,5 +11,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['{{ include "pocapp.fullname" . }}:{{ .Values.service.port }}']
+      args: ['-qO-', 'http://{{ include "pocapp.fullname" . }}:{{ .Values.service.port }}/healthz']
   restartPolicy: Never
