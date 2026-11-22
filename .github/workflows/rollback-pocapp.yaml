@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   rollback:
-    runs-on: arc-minikube
+    runs-on: self-hosted
 
     steps:
       - name: Checkout
