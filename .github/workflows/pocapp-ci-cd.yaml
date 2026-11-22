@@ -325,15 +325,21 @@ jobs:
           if [[ "$POCAPP_IMAGE_DELIVERY" == 'harbor' ]]; then
             : "${REGISTRY:?Configure HARBOR_REGISTRY como hostname[:porta].}"
             : "${PROJECT:?Configure HARBOR_PROJECT.}"
-            REGISTRY="${REGISTRY#http://}"
-            REGISTRY="${REGISTRY#https://}"
-            REGISTRY="${REGISTRY%/}"
-            PROJECT="${PROJECT#/}"
-            PROJECT="${PROJECT%/}"
-            if [[ "$REGISTRY" != 'harbor.localhost:8080' ]]; then
-              echo 'HARBOR_REGISTRY deve ser harbor.localhost:8080 para coincidir com o login.' >&2
+            if [[ "$REGISTRY" == *://* || "$REGISTRY" == */* || "$REGISTRY" =~ [[:space:]] ]]; then
+              echo 'HARBOR_REGISTRY deve conter somente hostname[:porta], sem protocolo, barra ou espaços.' >&2
               exit 1
             fi
+            if [[ ! "$REGISTRY" =~ ^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+              echo 'Formato inválido para HARBOR_REGISTRY.' >&2
+              exit 1
+            fi
+            PROJECT="${PROJECT#/}"
+            PROJECT="${PROJECT%/}"
+            if [[ ! "$PROJECT" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+              echo 'HARBOR_PROJECT deve ser um nome de projeto válido, sem barras.' >&2
+              exit 1
+            fi
+            printf 'registry=%s\n' "$REGISTRY" >> "$GITHUB_OUTPUT"
             REPOSITORY="${REGISTRY}/${PROJECT}/healthz-api"
             printf 'repository=%s\n' "$REPOSITORY" >> "$GITHUB_OUTPUT"
             echo "Repositório definido: $REPOSITORY"
@@ -375,7 +381,7 @@ jobs:
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         uses: docker/login-action@v3
         with:
-          registry: host.docker.internal:8080
+          registry: ${{ steps.reference.outputs.registry }}
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
