@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: host.docker.internal:8081/poc/healthz-api
   pullPolicy: IfNotPresent
-  tag: "sha-4745f28c1159"
+  tag: "sha-bab7b74eadff"
 
 # O workflow com deploy_target=canary preenche a imagem e inicia com peso 0.
 canary:
