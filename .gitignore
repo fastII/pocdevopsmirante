@@ -6,7 +6,9 @@ coverage/
 .env.local
 npm-debug.log*
 .DS_Store
-.json
+
+# Ignorar todos os arquivos JSON
+*.json
 
 # Backup local SonarQube
 sonarqube-h2-backup.mv.db
