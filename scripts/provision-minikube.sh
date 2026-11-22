@@ -274,6 +274,13 @@ service_healthy() {
   k --request-timeout=10s get --raw="$1" 2>/dev/null | jq -e '.status == "healthy"' >/dev/null
 }
 
+pocapp_image_cached() {
+  m image ls | awk -v image="$1" '
+    $0 == image || $0 == "docker.io/" image || $0 == "docker.io/library/" image { found = 1 }
+    END { exit !found }
+  '
+}
+
 # 1. Bootstrap. Preserva o perfil e prepara o Argo CD e as APIs usadas pelas apps.
 log 'Preparando Minikube e Metrics Server'
 if ! m status >/dev/null 2>&1; then
@@ -380,12 +387,15 @@ fi
 if [[ -n "${POCAPP_IMAGE_ARCHIVE:-}" ]]; then
   [[ "$pull_policy" != Always ]] || die 'A imagem local exige pullPolicy IfNotPresent ou Never.'
   m image load "$POCAPP_IMAGE_ARCHIVE"
-  m image ls | awk -v image="$image_repo:$image_tag" '
-    $0 == image || $0 == "docker.io/" image || $0 == "docker.io/library/" image { found = 1 }
-    END { exit !found }
-  ' || die "O archive não disponibilizou a imagem esperada: $image_repo:$image_tag."
+  pocapp_image_cached "$image_repo:$image_tag" || die "O archive não disponibilizou a imagem esperada: $image_repo:$image_tag."
 elif [[ "$image_repo" == healthz-api && "$pull_policy" != Always ]]; then
-  m image build -t "$image_repo:$image_tag" ./app
+  if pocapp_image_cached "$image_repo:$image_tag"; then
+    printf 'Reutilizando a imagem local %s:%s.\n' "$image_repo" "$image_tag"
+  elif [[ "$image_tag" == 1.0.0 ]]; then
+    m image build -t "$image_repo:$image_tag" ./app
+  else
+    die "A imagem local $image_repo:$image_tag está ausente. Forneça o artefato exato em POCAPP_IMAGE_ARCHIVE."
+  fi
 else
   printf 'POCAPP usará %s:%s. O registry e a tag precisam estar disponíveis para o Minikube.\n' "$image_repo" "$image_tag"
 fi

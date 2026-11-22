@@ -13,6 +13,7 @@ canary:
   image:
     repository: ""
     tag: ""
+    pullPolicy: ""
 
 service:
   type: ClusterIP

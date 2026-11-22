@@ -25,7 +25,7 @@ argocd app wait harbor --sync --health --timeout 600
 kubectl -n harbor get pods,pvc,svc
 ~~~
 
-O chart 1.19.4 usa banco e Redis internos, PVCs e Trivy. Os values incluem requests e limits para Nginx, banco e init containers, Trivy, Core, Jobservice e os dois containers do Registry. As chaves corretas do chart são `registry.registry.resources` e `registry.controller.resources`. [Values do Harbor](../gitops/helm-values/harbor.yaml)
+O chart 1.19.4 usa banco e Redis internos e PVCs. O Trivy do Harbor está desabilitado. O scan da imagem da POCAPP roda no GitHub Actions. Os values incluem requests e limits para Nginx, banco e init containers, Core, Jobservice e os dois containers do Registry. [Values do Harbor](../gitops/helm-values/harbor.yaml)
 
 ## 3. Preparar o registry para a aplicação
 
@@ -34,4 +34,4 @@ O chart 1.19.4 usa banco e Redis internos, PVCs e Trivy. Os values incluem reque
 3. Confirme DNS, acesso HTTPS e confiança no certificado a partir do runner que publica e do runtime do Minikube que puxa a imagem. Para projeto privado, configure uma credencial de pull no namespace `apps` e referencie-a nos values da POCAPP.
 4. Para diagnosticar `ImagePullBackOff`, confira os eventos do pod, a referência da imagem e as credenciais do registry.
 
-O túnel local de navegador do Traefik atende o Mac. O job de push atual usa `ubuntu-latest` e precisa de um endpoint do Harbor alcançável a partir do GitHub. [Workflow de CI/CD](../../.github/workflows/pocapp-ci-cd.yaml)
+Para a interface no navegador, abra `kubectl --context minikube -n traefik port-forward svc/traefik 8443:443` e use `https://harbor.localhost:8443`. O push em modo `harbor` roda no runner `self-hosted`. Use `HARBOR_REGISTRY` com o endereço canônico do registry. O Docker do runner e o containerd do nó precisam resolver esse endereço e confiar no certificado. O endpoint de token anunciado pelo Harbor usa `externalURL`, atualmente `https://harbor.local`. Enquanto o endereço canônico estiver indisponível, use `minikube-local` para carregar o artefato diretamente no perfil. [CI/CD da POCAPP](../../app/Runbookapp.md#3-configurar-o-cicd)

@@ -29,4 +29,4 @@ O chart `2026.5.1005` usa banco embutido nesta configuração da POC. Para usar 
 
 ## 3. Conectar ao pipeline
 
-Após sincronizar `platform-routes`, acesse a interface, configure o projeto `pocapp` e gere um token de análise para `SONAR_TOKEN`. Configure `SONAR_HOST_URL` com uma URL acessível a partir do pod runner. Valide DNS, conectividade e confiança TLS desse ambiente. [Workflow de CI/CD](../../.github/workflows/pocapp-ci-cd.yaml)
+Após sincronizar `platform-routes`, acesse a interface, configure o projeto `pocapp` e gere um token de análise para `SONAR_TOKEN`. Com o runner instalado na mesma máquina do Minikube, omita `SONAR_HOST_URL` para o workflow abrir o port-forward automaticamente. Para um SonarQube remoto, configure uma URL alcançável pelo runner, com DNS e TLS válidos. [Workflow de CI/CD](../../.github/workflows/pocapp-ci-cd.yaml)

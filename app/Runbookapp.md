@@ -29,12 +29,20 @@ Para deploy via Harbor, confirme o projeto, a tag e o acesso do runtime ao regis
 
 ## 3. Configurar o CI/CD
 
-| Tipo no GitHub Actions | Campos |
+| Variável ou Secret | Quando configurar |
 | --- | --- |
-| Variables | SONAR_HOST_URL, HARBOR_REGISTRY, HARBOR_PROJECT |
-| Secrets | SONAR_TOKEN, HARBOR_USERNAME, HARBOR_PASSWORD |
+| `SONAR_TOKEN` | Secret de análise do SonarQube |
+| `SONAR_HOST_URL` | Opcional. Deixe sem valor quando o runner estiver na máquina do Minikube. O job abre o próprio port-forward via `kubectl` |
+| `HARBOR_REGISTRY`, `HARBOR_PROJECT` | Modo `harbor`. Use `hostname[:porta]`, sem `https://`, e o nome do projeto |
+| `HARBOR_USERNAME`, `HARBOR_PASSWORD` | Secrets para publicação no modo `harbor` |
+| `POCAPP_IMAGE_PLATFORM` | Opcional. Padrão `linux/arm64`. Use `linux/amd64` se o nó for Intel/AMD |
+| `POCAPP_IMAGE_DELIVERY` | Opcional. Define o modo de entrega nos pushes automáticos. Padrão `harbor` |
 
-O job de validação usa `ubuntu-latest`. Os jobs de análise Sonar, build com Trivy, publicação no Harbor e atualização do GitOps usam `self-hosted`. O runner precisa alcançar o SonarQube e o Harbor e ter acesso ao Docker. Em `main`, o deploy padrão atualiza `image.repository` e `image.tag`. Acione o workflow manualmente em `main` com `deploy_target: canary` para cadastrar a imagem publicada com peso zero. Durante um canary, o job GitOps e o workflow de rollback preservam as duas imagens até o encerramento pelo Git. Um commit que mexe apenas no `helm/pocapp/values.yaml` é reconciliado pelo Argo CD sem disparar esse workflow. [Workflow da POCAPP](../.github/workflows/pocapp-ci-cd.yaml)
+O build e o Trivy rodam no runner hospedado pelo GitHub. O runner `self-hosted` executa a análise Sonar e entrega o artefato. Para o acesso local automático, o usuário do runner precisa ter `kubectl`, `jq` e acesso ao contexto `minikube`. A URL criada pelo job vale durante a análise e o Quality Gate. Remova a variável `SONAR_HOST_URL` se ela apontar para uma porta antiga do Traefik.
+
+Para o primeiro deploy com pouca memória, abra **Actions → POCAPP - CI & CD → Run workflow** em `main`, selecione `deploy_target: stable` e `image_delivery: minikube-local`. O runner baixa a imagem pronta, carrega-a no Minikube e só então o job GitOps publica a tag. Esse modo funciona com `IfNotPresent` e depende do cache do perfil. Guarde o artefato se quiser reconstruir o mesmo deploy depois de excluir o cluster. Para usar o Harbor, selecione `image_delivery: harbor` e valide o endereço do registry tanto no runner quanto no runtime do nó. [Workflow da POCAPP](../.github/workflows/pocapp-ci-cd.yaml) · [Acesso ao Harbor](../infra/harbor/01-install-harbor.md#3-preparar-o-registry-para-a-aplicação)
+
+Use `deploy_target: canary` após o primeiro deploy saudável. Durante um canary, o job GitOps e o workflow de rollback preservam as duas imagens até o encerramento pelo Git. Um commit que mexe apenas no `helm/pocapp/values.yaml` é reconciliado pelo Argo CD sem disparar esse workflow.
 
 ## 4. Implantar e conferir
 
@@ -69,5 +77,5 @@ O canary usa o mesmo `HTTPRoute` em `healthz.localhost` com dois Services `Clust
    done | sort | uniq -c
    ~~~
 
-4. **Promover.** Publique `canary.weight: 100` e confirme que a rota serve a candidata. Em seguida, copie o repositório e a tag da candidata para `image.repository` e `image.tag`, mantendo o peso em 100 até `deployment/pocapp` ficar saudável com essa imagem. Publique `canary.weight: 0` e confirme que o Service estável atende com a tag promovida. Depois publique `canary.enabled: false` para o Argo CD remover os recursos do canary.
+4. **Promover.** Publique `canary.weight: 100` e confirme que a rota serve a candidata. Em seguida, copie o repositório, a tag e a política de pull efetiva da candidata para `image`, mantendo o peso em 100 até `deployment/pocapp` ficar saudável com essa imagem. Publique `canary.weight: 0` e confirme que o Service estável atende com a tag promovida. Depois publique `canary.enabled: false` para o Argo CD remover os recursos do canary.
 5. **Abortar antes de atualizar a imagem estável.** Publique `canary.weight: 0` e confirme que a rota voltou à versão estável. Depois desabilite o canary. Se a imagem estável já tiver sido atualizada durante a promoção, restaure a imagem anterior nela e espere que fique saudável antes de devolver o tráfego. Mantenha a imagem anterior disponível para essa recuperação.

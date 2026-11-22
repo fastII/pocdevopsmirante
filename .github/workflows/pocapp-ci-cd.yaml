@@ -16,10 +16,21 @@ on:
         options:
           - canary
           - stable
-        default: canary
+        default: stable
+      image_delivery:
+        description: "Entrega da imagem no ambiente"
+        type: choice
+        options:
+          - harbor
+          - minikube-local
+        default: harbor
 
 permissions:
   contents: read
+
+env:
+  POCAPP_IMAGE_PLATFORM: ${{ vars.POCAPP_IMAGE_PLATFORM || 'linux/arm64' }}
+  POCAPP_IMAGE_DELIVERY: ${{ inputs.image_delivery || vars.POCAPP_IMAGE_DELIVERY || 'harbor' }}
 
 concurrency:
   group: pocapp-${{ github.ref }}
@@ -124,7 +135,8 @@ jobs:
     name: SonarQube + Quality Gate
     needs: validate
     runs-on: self-hosted
-
+    env:
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
     steps:
       - name: Checkout
@@ -146,6 +158,33 @@ jobs:
           which node
           node --version
 
+      - name: Abrir acesso local ao SonarQube
+        if: vars.SONAR_HOST_URL == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          forward_log=$(mktemp "$RUNNER_TEMP/sonar-forward.XXXXXX")
+          kubectl --context minikube -n sonarqube port-forward --address 127.0.0.1 \
+            svc/sonarqube-sonarqube :9000 > "$forward_log" 2>&1 &
+          forward_pid=$!
+          printf 'SONAR_FORWARD_PID=%s\n' "$forward_pid" >> "$GITHUB_ENV"
+
+          for i in {1..25}; do
+            if ! kill -0 "$forward_pid" 2>/dev/null; then break; fi
+            port=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9][0-9]*\) -> 9000$/\1/p' "$forward_log" | head -1)
+            if [[ -n "$port" ]] && curl -fsS --max-time 3 --noproxy '*' \
+              "http://127.0.0.1:$port/api/system/status" 2>/dev/null | jq -e '.status == "UP"' >/dev/null; then
+              printf 'SONAR_HOST_URL=http://127.0.0.1:%s\n' "$port" >> "$GITHUB_ENV"
+              printf 'NO_PROXY=127.0.0.1,localhost%s\n' "${NO_PROXY:+,$NO_PROXY}" >> "$GITHUB_ENV"
+              printf 'no_proxy=127.0.0.1,localhost%s\n' "${no_proxy:+,$no_proxy}" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$forward_log" >&2
+          echo 'O SonarQube ainda não está acessível no contexto minikube.' >&2
+          exit 1
+
       - name: Analisar código no SonarQube
         uses: SonarSource/sonarqube-scan-action@v6.0.0
         with:
@@ -156,7 +195,6 @@ jobs:
             -Dsonar.sources=src
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
       - name: Aguardar Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
@@ -165,15 +203,22 @@ jobs:
           pollingTimeoutSec: 300
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
+      - name: Encerrar acesso local ao SonarQube
+        if: always() && vars.SONAR_HOST_URL == ''
+        shell: bash
+        run: |
+          if [[ -n "${SONAR_FORWARD_PID:-}" ]]; then
+            kill "$SONAR_FORWARD_PID" 2>/dev/null || true
+          fi
 
   # ============================================================
   # 3. DOCKER BUILD + TRIVY + HARBOR
   # ============================================================
   image:
-    name: Docker Build + Trivy + Harbor
+    name: Docker Build + Trivy
     needs: sonar
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -181,6 +226,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verificar plataforma e destino da imagem
+        shell: bash
+        run: |
+          case "$POCAPP_IMAGE_PLATFORM" in
+            linux/amd64|linux/arm64) ;;
+            *) echo 'Defina POCAPP_IMAGE_PLATFORM como linux/amd64 ou linux/arm64.' >&2; exit 1 ;;
+          esac
+          case "$POCAPP_IMAGE_DELIVERY" in
+            harbor|minikube-local) ;;
+            *) echo 'Defina POCAPP_IMAGE_DELIVERY como harbor ou minikube-local.' >&2; exit 1 ;;
+          esac
+
+      - name: Preparar emulação ARM64
+        if: env.POCAPP_IMAGE_PLATFORM == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - name: Preparar Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -204,23 +267,87 @@ jobs:
           set -euo pipefail
 
           docker buildx build \
+            --platform "$POCAPP_IMAGE_PLATFORM" \
             --load \
-            -t "pocapp-scan:$TAG" \
+            -t "healthz-api:$TAG" \
             ./app
 
-      - name: Trivy - bloquear HIGH/CRITICAL
+      - name: Trivy - relatar HIGH/CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: pocapp-scan:${{ steps.meta.outputs.tag }}
+          image-ref: healthz-api:${{ steps.meta.outputs.tag }}
           format: table
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'HIGH,CRITICAL'
 
-      # Publicação somente na branch main
-      - name: Login no Harbor
+      - name: Exportar imagem para entrega
         if: github.ref == 'refs/heads/main'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: docker save --output "$RUNNER_TEMP/pocapp-image.tar" "healthz-api:$TAG"
+
+      - name: Enviar imagem como artefato
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocapp-image
+          path: ${{ runner.temp }}/pocapp-image.tar
+          retention-days: 7
+          overwrite: true
+
+  publish:
+    name: Entregar imagem ao Harbor ou ao Minikube
+    needs: image
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    outputs:
+      repository: ${{ steps.reference.outputs.repository }}
+      tag: ${{ needs.image.outputs.tag }}
+    env:
+      TAG: ${{ needs.image.outputs.tag }}
+    steps:
+      - name: Definir referência da imagem
+        id: reference
+        env:
+          REGISTRY: ${{ vars.HARBOR_REGISTRY }}
+          PROJECT: ${{ vars.HARBOR_PROJECT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$POCAPP_IMAGE_DELIVERY" == harbor ]]; then
+            : "${REGISTRY:?Configure HARBOR_REGISTRY como hostname[:porta].}"
+            : "${PROJECT:?Configure HARBOR_PROJECT.}"
+            printf 'repository=%s/%s/healthz-api\n' "$REGISTRY" "$PROJECT" >> "$GITHUB_OUTPUT"
+          else
+            printf 'repository=healthz-api\n' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Baixar a imagem construída no GitHub
+        uses: actions/download-artifact@v4
+        with:
+          name: pocapp-image
+          path: ${{ runner.temp }}/pocapp-image-${{ github.run_id }}
+
+      - name: Importar imagem no Minikube
+        if: env.POCAPP_IMAGE_DELIVERY == 'minikube-local'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_platform=$(kubectl --context minikube get nodes \
+            -o jsonpath='{.items[0].status.nodeInfo.operatingSystem}{"/"}{.items[0].status.nodeInfo.architecture}')
+          [[ "$node_platform" == "$POCAPP_IMAGE_PLATFORM" ]] || {
+            echo "O nó usa $node_platform. Ajuste POCAPP_IMAGE_PLATFORM." >&2; exit 1;
+          }
+          minikube -p minikube image load "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
+          minikube -p minikube image ls | awk -v image="healthz-api:$TAG" '
+            $0 == image || $0 == "docker.io/" image || $0 == "docker.io/library/" image { found = 1 }
+            END { exit !found }
+          '
+
+      - name: Login no Harbor
+        if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         uses: docker/login-action@v3
         with:
           registry: ${{ vars.HARBOR_REGISTRY }}
@@ -228,20 +355,19 @@ jobs:
           password: ${{ secrets.HARBOR_PASSWORD }}
 
       - name: Publicar imagem no Harbor
-        if: github.ref == 'refs/heads/main'
+        if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         env:
-          REGISTRY: ${{ vars.HARBOR_REGISTRY }}
-          PROJECT: ${{ vars.HARBOR_PROJECT }}
-          TAG: ${{ steps.meta.outputs.tag }}
+          REPOSITORY: ${{ steps.reference.outputs.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
-          IMAGE="$REGISTRY/$PROJECT/healthz-api:$TAG"
+          IMAGE="$REPOSITORY:$TAG"
 
           echo "Publicando imagem: $IMAGE"
 
-          docker tag "pocapp-scan:$TAG" "$IMAGE"
+          docker load --input "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
+          docker tag "healthz-api:$TAG" "$IMAGE"
           docker push "$IMAGE"
 
   # ============================================================
@@ -249,11 +375,11 @@ jobs:
   # ============================================================
   gitops:
     name: GitOps - Atualizar imagem no Helm
-    needs: image
+    needs: publish
 
     if: github.ref == 'refs/heads/main'
 
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     concurrency:
       group: pocapp-gitops-main
       cancel-in-progress: false
@@ -278,9 +404,8 @@ jobs:
 
       - name: Atualizar imagem no values.yaml
         env:
-          REGISTRY: ${{ vars.HARBOR_REGISTRY }}
-          PROJECT: ${{ vars.HARBOR_PROJECT }}
-          TAG: ${{ needs.image.outputs.tag }}
+          REPOSITORY: ${{ needs.publish.outputs.repository }}
+          TAG: ${{ needs.publish.outputs.tag }}
           DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}
         shell: bash
         run: |
@@ -304,9 +429,11 @@ jobs:
               raise SystemExit("Há um canary ativo. Finalize a promoção ou o aborto pelo Git.")
 
           image = {
-              "repository": f"{os.environ['REGISTRY']}/{os.environ['PROJECT']}/healthz-api",
+              "repository": os.environ["REPOSITORY"],
               "tag": os.environ["TAG"],
           }
+          if os.environ["POCAPP_IMAGE_DELIVERY"] == "minikube-local":
+              image["pullPolicy"] = "IfNotPresent"
           if os.environ["DEPLOY_TARGET"] == "canary":
               canary["image"].update(image)
               canary["enabled"] = True
@@ -322,7 +449,7 @@ jobs:
 
       - name: Commit e push na main
         env:
-          TAG: ${{ needs.image.outputs.tag }}
+          TAG: ${{ needs.publish.outputs.tag }}
           DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}
         shell: bash
         run: |
