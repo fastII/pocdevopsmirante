@@ -24,7 +24,8 @@ Instala a plataforma no perfil minikube. Reutiliza os Secrets existentes.
   --com-arc              Instala o ARC no cluster. Por padrão usa-se o runner externo.
   --sem-arc              Mantém o ARC fora deste provisionamento (padrão).
   --repositorio-privado Solicita usuário e token HTTPS para o Argo CD.
-  --restaurar-secrets    Lê backups SOPS de Harbor, SonarQube e Grafana.
+  --restaurar-secrets    Lê backups SOPS de Harbor, SonarQube, Grafana, Git e ARC.
+                        O backup do ARC é usado somente com --com-arc.
                         Configure SECRETS_DIR e SOPS_AGE_KEY_FILE.
   --servir              Mantém o port-forward HTTPS na porta local 8443.
   --acesso-corporativo  Abre o Traefik com minikube service, sem editar /etc/hosts.
@@ -70,10 +71,11 @@ if "$restore_secrets"; then
   [[ -r "${SOPS_AGE_KEY_FILE:-}" && -f "${SOPS_AGE_KEY_FILE:-}" ]] ||
     die 'Configure SOPS_AGE_KEY_FILE com a chave age guardada fora do cluster.'
   [[ -d "$secrets_dir" ]] || die "Diretório de backups SOPS inexistente: $secrets_dir."
-  if [[ ! -f "$secrets_dir/harbor.enc.yaml" && ! -f "$secrets_dir/sonarqube.enc.yaml" ]]; then
-    if ! "$observability" || [[ ! -f "$secrets_dir/grafana.enc.yaml" ]]; then
-      die 'Nenhum backup SOPS para os componentes selecionados.'
-    fi
+  if [[ ! -f "$secrets_dir/harbor.enc.yaml" && ! -f "$secrets_dir/sonarqube.enc.yaml" &&
+        ! -f "$secrets_dir/gitops-repo.enc.yaml" ]] &&
+    ! { "$observability" && [[ -f "$secrets_dir/grafana.enc.yaml" ]]; } &&
+    ! { "$arc" && [[ -f "$secrets_dir/arc.enc.yaml" ]]; }; then
+    die 'Nenhum backup SOPS para os componentes selecionados.'
   fi
 fi
 yq --version | grep -Eq 'mikefarah/yq.*v4\.' || die 'Use o yq v4 de mikefarah.'
@@ -127,6 +129,20 @@ secret_exists() {
   [[ -n "$found" ]]
 }
 
+# O Argo CD também pode ter cadastrado esse repositório com um nome gerado.
+gitops_repo_configured() {
+  local matches
+  if secret_exists argocd provision-gitops-repo; then
+    return 0
+  fi
+  matches=$(a --request-timeout=10s get secrets -l argocd.argoproj.io/secret-type=repository -o json |
+    jq -r --arg repo "$repo" '
+      def normalize: sub("/+$"; "") | sub("\\.git$"; "");
+      any(.items[]; ((.data.url // "") | @base64d | normalize) == ($repo | normalize))
+    ') || die 'Não foi possível consultar o cadastro Git no Argo CD.'
+  [[ "$matches" == true ]]
+}
+
 # Restaura somente o Secret esperado. kubectl create preserva um Secret que
 # surgir entre a consulta e a criação. O YAML claro passa apenas pelo pipe.
 restore_secret() {
@@ -139,7 +155,9 @@ restore_secret() {
   fi
   log "Restaurando Secret $ns/$name do backup SOPS"
   if ! sops decrypt --output-type json "$file" |
-    jq -cse --arg ns "$ns" --arg name "$name" '
+    jq -cse --arg ns "$ns" --arg name "$name" --arg repo "$repo" '
+      def repository_secret: $ns == "argocd" and $name == "provision-gitops-repo";
+      def value($key): .stringData[$key] // ((.data[$key] // "") | @base64d);
       if length == 1 and (.[0] |
         .apiVersion == "v1" and .kind == "Secret"
         and .metadata.namespace == $ns and .metadata.name == $name
@@ -148,12 +166,14 @@ restore_secret() {
         and ((.stringData // {}) | type == "object")
         and ((.data // {}) + (.stringData // {}) |
           . as $values | all($ARGS.positional[];
-            ($values[.] | type == "string" and length > 0))))
+            ($values[.] | type == "string" and length > 0)))
+        and ((repository_secret | not) or (value("type") == "git" and value("url") == $repo)))
       then .[0] | {
         apiVersion, kind, metadata: {name: $name, namespace: $ns},
         type: "Opaque", data: (.data // {}), stringData: (.stringData // {})
       }
-      else error("O backup precisa conter somente o Secret esperado e suas chaves obrigatórias.")
+      | if repository_secret then .metadata.labels["argocd.argoproj.io/secret-type"] = "repository" else . end
+      else error("O backup precisa conter somente o Secret esperado e seus dados obrigatórios.")
       end
     ' --args "$@" | k create -f -; then
     die "Falha ao restaurar $ns/$name de $file."
@@ -275,8 +295,15 @@ helm --kube-context "$profile" upgrade --install argocd argo/argo-cd --version 1
   --wait --timeout 10m
 k wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
 k apply -f infra/gitops/projects/
+if "$restore_secrets" && [[ -f "$secrets_dir/gitops-repo.enc.yaml" ]]; then
+  if gitops_repo_configured; then
+    log 'Preservando o cadastro Git existente no Argo CD'
+  else
+    restore_secret "$secrets_dir/gitops-repo.enc.yaml" argocd provision-gitops-repo type url username password
+  fi
+fi
 if { "$private_repo" || [[ -n "${GITOPS_USERNAME:-}${GITOPS_TOKEN:-}" ]]; } &&
-  ! secret_exists argocd provision-gitops-repo; then
+  ! gitops_repo_configured; then
   prompt GITOPS_USERNAME 'Usuário Git HTTPS'
   prompt GITOPS_TOKEN 'Token Git HTTPS' secret
   printf '%s' "$GITOPS_USERNAME" > "$scratch/username"
@@ -317,6 +344,10 @@ password_secret sonarqube sonarqube-monitoring monitoringPasscode SONAR_MONITORI
 
 if "$arc"; then
   k apply -f infra/gitops/arc-minikube/manifests/namespaces.yaml
+  if "$restore_secrets"; then
+    restore_secret "$secrets_dir/arc.enc.yaml" arc-runners arc-github-app \
+      github_app_id github_app_installation_id github_app_private_key
+  fi
   if ! secret_exists arc-runners arc-github-app; then
     prompt ARC_APP_ID 'GitHub App ID'
     prompt ARC_INSTALLATION_ID 'GitHub App Installation ID'

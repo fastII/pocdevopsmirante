@@ -18,7 +18,7 @@ cd pocdevopsmirante
 bash scripts/provision-minikube.sh --repositorio-privado --acesso-corporativo
 ~~~
 
-O token do Argo CD precisa de leitura no repositório. O Git da máquina já deve estar autenticado para clonar e conferir a revisão. A instalação nova da infraestrutura funciona com os prompts, sem arquivos SOPS, chave age ou backups de outra máquina.
+O token do Argo CD precisa de leitura no repositório. O Git da máquina já deve estar autenticado para clonar e conferir a revisão. A instalação nova da infraestrutura funciona com os prompts, sem arquivos SOPS, chave age ou backups de outra máquina. Para automatizar o preenchimento, forneça as variáveis listadas em `--help`. Por exemplo, `SONAR_MONITORING_PASSCODE` fornece o passcode do SonarQube.
 
 O runner `self-hosted` é configurado à parte quando houver necessidade de rodar CI/CD. Para instalar o ARC, acrescente `--com-arc` e tenha a GitHub App, seus IDs e o PEM guardado fora do Git. Os jobs precisam selecionar o runner pretendido pelo `runs-on`. [Preparar a GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md)
 
@@ -43,21 +43,25 @@ Depois do provisionamento, acesse `https://argocd.localhost:PORTA_HTTPS` com a p
 ### Reexecutar ou reconstruir
 
 - **Perfil existente.** Reexecute o script para reconciliar a instalação. Ele reutiliza Secrets encontrados e solicita apenas os ausentes. As sincronizações manuais usam `prune: false`; as Applications automáticas mantêm suas próprias políticas. Confira os PVCs e suas políticas antes de mudanças que removam volumes do estado desejado.
-- **Perfil excluído.** Forneça as credenciais por prompt, variáveis ou backups SOPS. Para reativar um repositório Git privado, configure o acesso do Git local e forneça as credenciais HTTPS ao Argo CD de acordo com `--help`. A opção SOPS cobre os Secrets abaixo; TLS, ARC e credenciais de pull têm suas próprias etapas.
+- **Perfil excluído.** Forneça as credenciais por prompt, variáveis ou backups SOPS. Para reativar um repositório Git privado, configure o acesso do Git local. O Argo CD usa o PAT do backup SOPS ou as credenciais HTTPS informadas com `--repositorio-privado`. TLS e credenciais de pull têm suas próprias etapas.
 
 | Arquivo SOPS | Secret esperado | Chaves |
 | --- | --- | --- |
 | `harbor.enc.yaml` | `harbor/harbor-admin` | `HARBOR_ADMIN_PASSWORD` |
 | `sonarqube.enc.yaml` | `sonarqube/sonarqube-monitoring` | `monitoringPasscode` |
 | `grafana.enc.yaml` | `observability/grafana-admin` | `admin-user`, `admin-password` |
+| `gitops-repo.enc.yaml` | `argocd/provision-gitops-repo` | `type` (`git`), `url` (igual à do `platform-root`), `username`, `password` (PAT) |
+| `arc.enc.yaml` | `arc-runners/arc-github-app` | `github_app_id`, `github_app_installation_id`, `github_app_private_key` |
 
-Salve cada arquivo como um único Secret SOPS. A chave privada age deve ficar fora do Git e do Minikube. `SECRETS_DIR` aponta para a pasta dos backups e tem `infra/secrets` como padrão. A restauração pula Secrets existentes e deixa os backups ausentes para o fluxo de prompts. [SOPS e age](https://getsops.io/docs/)
+Com `--restaurar-secrets`, o script procura os arquivos da tabela dentro de `SECRETS_DIR`, que tem `infra/secrets` como padrão. Aponte essa variável para a sua pasta de backups e `SOPS_AGE_KEY_FILE` para a chave privada age que abre os arquivos. Guarde a chave fora do Git e do Minikube. Cada arquivo deve conter um único Secret. O script preserva Secrets existentes e solicita credenciais ausentes quando o arquivo correspondente também estiver ausente. [SOPS e age](https://getsops.io/docs/)
 
 ~~~bash
 export SOPS_AGE_KEY_FILE="/caminho/seguro/keys.txt"
 export SECRETS_DIR="/caminho/seguro/backups-sops"
 bash scripts/provision-minikube.sh --restaurar-secrets --repositorio-privado --acesso-corporativo
 ~~~
+
+Acrescente `--com-arc` para instalar o ARC e restaurar a credencial da GitHub App, quando disponível. O PAT do backup configura o acesso do Argo CD ao repositório. O Git local precisa ter acesso à revisão antes de iniciar o bootstrap.
 
 Antes de excluir o perfil, confirme que os backups podem ser abertos com a chave armazenada fora do cluster. Imagens e metadados do Harbor, histórico do SonarQube e dashboards criados manualmente exigem exportação ou backup próprio. Restaurar um Secret recupera credenciais do bootstrap, sem recuperar os dados dos volumes.
 
