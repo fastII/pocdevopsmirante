@@ -1,10 +1,9 @@
-
 replicaCount: 1
 
 image:
-  repository: healthz-api
+  repository: host.docker.internal:8081/poc/healthz-api
   pullPolicy: IfNotPresent
-  tag: "1.0.0"
+  tag: "sha-9adfb6843365"
 
 # Ative após validar a versão estável. weight é a porcentagem no HTTPRoute.
 canary:
@@ -55,19 +54,19 @@ httpRoute:
   enabled: true
   annotations: {}
   parentRefs:
-    - name: traefik-gateway
-      namespace: traefik
-      sectionName: websecure
+  - name: traefik-gateway
+    namespace: traefik
+    sectionName: websecure
   hostnames:
-    - healthz.localhost
+  - healthz.localhost
   rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
 
 autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 3
-  targetCPUUtilizationPercentage: 80            
+  targetCPUUtilizationPercentage: 80
