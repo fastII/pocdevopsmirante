@@ -65,7 +65,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   {{- if not (regexMatch "^([0-9]|[1-9][0-9]|100)$" (toString .Values.canary.weight)) -}}
     {{- fail "canary.weight deve ser um inteiro entre 0 e 100" -}}
   {{- end -}}
-  {{- $image := dict "repository" (default .Values.image.repository .Values.canary.image.repository) "tag" (required "defina canary.image.tag" .Values.canary.image.tag) "pullPolicy" .Values.canary.image.pullPolicy -}}
+  {{- $tag := required "canary.image.tag é obrigatória quando canary.enabled=true. Comece com o canary desabilitado e execute o workflow com deploy_target=canary para publicar a candidata." .Values.canary.image.tag -}}
+  {{- $image := dict "repository" (default .Values.image.repository .Values.canary.image.repository) "tag" $tag "pullPolicy" .Values.canary.image.pullPolicy -}}
   {{- $candidate := dict "name" (include "pocapp.canaryFullname" .) "selector" (include "pocapp.canarySelectorLabels" .) "image" $image "canary" true -}}
   {{- if or (eq $stable.name $candidate.name) (eq $stable.selector $candidate.selector) -}}
     {{- fail "os nomes e seletores do canary e da versão estável precisam ser distintos" -}}

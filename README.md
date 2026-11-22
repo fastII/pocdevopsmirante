@@ -44,7 +44,7 @@ flowchart TD
 | Argo CD e Helm | Reconciliam os manifests publicados em `main`. `platform-root` cria as Applications de Traefik, Harbor, SonarQube, Kyverno, políticas, rotas e POCAPP |
 | Traefik e Gateway API | O listener HTTPS termina TLS. As `HTTPRoute` encaminham o tráfego entre namespaces |
 | Harbor e SonarQube | Registry OCI e análise de código |
-| Kyverno | Políticas de admissão declarativas. A regra bloqueia imagens sem tag explícita ou com `:latest` no namespace `apps` |
+| Kyverno | Políticas de admissão declarativas. A regra bloqueia imagens sem tag explícita ou com `:latest` no namespace `apps`. [Política em Deny](infra/security/kyverno/disallow-latest.yaml) |
 | Observabilidade | Prometheus e Alertmanager coletam métricas e avaliam alertas. Alloy coleta logs, Loki armazena e Grafana consulta os dados |
 | SOPS e age | Backups criptografados de Secrets |
 | ARC | Execução opcional de runners do GitHub Actions no cluster |
@@ -293,6 +293,10 @@ O scanner e o Quality Gate usam o mesmo túnel em `http://127.0.0.1:<porta-dinâ
 
 Em **Actions → POCAPP - CI & CD → Run workflow**, selecione a branch `main`. As duas opções do formulário são independentes.
 
+![Formulário Run workflow com main, as opções canary e stable em deploy_target e harbor em image_delivery](evidence/capturas/pocapp-workflow-inputs.png)
+
+O print mostra `stable` selecionado. Para iniciar uma candidata pelo Harbor na demonstração, escolha `canary` e mantenha `harbor`. Comece com `canary.enabled: false`. O job GitOps preenche a tag e habilita a candidata com peso `0` depois da publicação da imagem.
+
 | Input | Opção | Efeito |
 | --- | --- | --- |
 | `deploy_target` | `stable` | Atualiza a imagem da versão estável em `image` |
@@ -342,6 +346,7 @@ Em um teste isolado no Minikube, o peso `10` produziu 90 respostas da estável e
 | Harbor com `Dirty database version 4` | Uma migração foi interrompida. A recuperação usou backup criptografado, conferiu o esquema e reaplicou o SQL oficial em transação. Ajustes no Argo CD preservam os Secrets aleatórios e evitam que rerenders reiniciem os pods |
 | Push HTTP no Harbor e pull pelo Minikube | Pelo Traefik, o daemon Docker tentava HTTPS e recebia `404`. A porta `8081` passou a encaminhar diretamente ao Service do Harbor. O containerd usa HTTP para o mesmo endereço e o túnel permanece ativo durante o deploy |
 | Kyverno saudável e política `OutOfSync` | A política tentou sincronizar antes da disponibilidade de `ValidatingPolicy v1`. O Argo CD esgotou as tentativas da revisão. O script agora espera a descoberta da API e solicita uma nova tentativa específica |
+| Helm falha com `defina canary.image.tag` | O canary foi habilitado no Git com a tag da candidata vazia. Comece com `canary.enabled: false` e use `deploy_target=canary` para registrar a imagem. Ajuste o peso depois que a candidata estiver pronta |
 | Timeouts do etcd, containerd e probes | O ambiente mostrou alta pressão de CPU e memória durante a observabilidade e os jobs ARC. A auditoria registrou 7,10 GiB em um limite de 8 GiB. Uma coleta posterior registrou processos encerrados por OOM. Foram ajustados recursos, sondagens e retenção |
 | `ImagePullBackOff` no primeiro deploy | A imagem `healthz-api:1.0.0` faltava no cache do containerd. O pipeline passou a entregar pelo Harbor ou carregar o artefato no nó. A plataforma segue com a instalação da observabilidade |
 | Acesso sem sudo no Mac corporativo | `minikube tunnel` demandava portas privilegiadas. O encaminhamento HTTPS do script usa a porta local `8443`. `--acesso-corporativo` permite usar as portas dinâmicas do Minikube |

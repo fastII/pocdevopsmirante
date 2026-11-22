@@ -5,10 +5,10 @@ image:
   pullPolicy: IfNotPresent
   tag: "sha-9adfb6843365"
 
-# Ative após validar a versão estável. weight é a porcentagem no HTTPRoute.
+# O workflow com deploy_target=canary preenche a imagem e inicia com peso 0.
 canary:
-  enabled: true
-  weight: 10
+  enabled: false
+  weight: 0
   image:
     repository: ""
     tag: ""
