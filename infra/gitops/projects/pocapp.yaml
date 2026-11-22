@@ -4,12 +4,15 @@ metadata:
   name: pocapp
   namespace: argocd
 spec:
-  description: Aplicacao Node.js pocapp - POC DevOps Mirante
+  description: Projeto GitOps da POC
+
   sourceRepos:
-    - https://github.com/fastII/pocdevopsmirante.git
+    - '*'
+
   destinations:
-    - server: https://kubernetes.default.svc
-      namespace: apps
-  namespaceResourceWhitelist:
-    - group: '*'
-      kind: '*'
+    - namespace: '*'
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
