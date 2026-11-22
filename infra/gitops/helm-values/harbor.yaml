@@ -2,7 +2,11 @@ database:
   type: internal
   internal:
     livenessProbe:
+      # Deixa o PostgreSQL concluir a recuperação após a pressão no nó.
+      initialDelaySeconds: 30
+      periodSeconds: 10
       timeoutSeconds: 5
+      failureThreshold: 12
     readinessProbe:
       timeoutSeconds: 5
     resources:

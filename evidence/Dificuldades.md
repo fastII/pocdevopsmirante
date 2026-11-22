@@ -93,7 +93,11 @@ for app in obs-loki obs-alloy; do
 done
 ~~~
 
-O workflow passou a construir e escanear a imagem em um runner hospedado. O runner local entrega o artefato ao Harbor ou carrega o arquivo diretamente no Minikube. [CI/CD da POCAPP](../app/Runbookapp.md#3-configurar-o-cicd)
+O workflow passou a construir e escanear a imagem em um runner hospedado. O runner local entrega o artefato ao Harbor ou carrega o arquivo diretamente no Minikube. Para recuperar o primeiro deploy, construí `healthz-api:1.0.0` com a revisão sincronizada pelo Argo CD e carreguei a imagem no containerd. O pod passou a `1/1 Running`. [CI/CD da POCAPP](../app/Runbookapp.md#3-configurar-o-cicd)
+
+Também ajustei o limite do contêiner Minikube de 4 para 6 CPUs no Docker, com 8 CPUs disponíveis na VM. O teto de memória continuou em 8 GiB. A API voltou a passar no `/readyz` e uma amostra após a POCAPP entrar em execução registrou 6,87 GiB em uso. O ajuste é reversível com `docker update --cpus=4 minikube` enquanto o contêiner atual existir.
+
+O Harbor chegou a responder HTTP 500 no endpoint `/v2/`. Os eventos do PostgreSQL registraram timeout de readiness e falha de liveness enquanto o banco recuperava. Os values ampliam a janela da liveness para permitir a recuperação, mantendo a readiness como condição para aceitar tráfego. [Values do Harbor](../infra/gitops/helm-values/harbor.yaml)
 
 <details>
 <summary>Registro original da sessão de diagnóstico</summary>
