@@ -12,9 +12,7 @@ Montei esta POC para reproduzir, em um Kubernetes local, as integrações entre 
 
 ## Por que resolvi construir esta POC
 
-Desafios técnicos como este são importantes para quem trabalha com TI. Eles nos tiram do ambiente confortável, permitem testar novas tecnologias com autonomia e mostram, na prática, os detalhes que não aparecem em um diagrama de arquitetura.
-
-Minha proposta foi montar uma plataforma Kubernetes local, próxima dos conceitos utilizados em ambientes corporativos, com a liberdade de experimentar, investigar, corrigir e evoluir. Quis entender como as ferramentas se integram e quais decisões tornam a operação mais simples, segura e previsível.
+Quis entender o que dá trabalho quando essas ferramentas precisam funcionar juntas. Um exemplo foi publicar a imagem no Harbor. A interface abria no navegador, mas o daemon do Docker e o containerd do Minikube precisavam alcançar o registry a partir de redes diferentes. O laboratório me deu espaço para investigar esse tipo de problema e registrar a solução para a próxima instalação.
 
 ## Arquitetura
 
@@ -49,13 +47,13 @@ flowchart TD
 | SOPS e age | Backups criptografados de Secrets |
 | ARC | Execução opcional de runners do GitHub Actions no cluster |
 
-A instalação original usou Applications separadas. A instalação atual usa App-of-Apps para a plataforma e bootstrap separado para observabilidade e ARC. O diagrama mostra os modos de integração da POC. A entrega completa via Harbor depende de conectividade, TLS e credenciais na máquina do runner e no runtime do nó. [Evidências da instalação](evidence/Provisionamento.md) · [Application raiz](infra/gitops/bootstrap/root-app.yaml)
+Comecei criando as Applications uma a uma. Hoje, a Application `platform-root` cria as aplicações da plataforma a partir do Git. O script instala a observabilidade em seguida e pode instalar o ARC, se solicitado. Quando o fluxo usa o Harbor, o runner precisa conseguir publicar a imagem, e o nó do Minikube precisa conseguir baixá-la. [Evidências da instalação](evidence/Provisionamento.md) · [Application raiz](infra/gitops/bootstrap/root-app.yaml)
 
 ## Provisionamento pelo script
 
 ### 1. Preparar a máquina
 
-Instale Bash, Docker, Git, Minikube, `kubectl`, Helm, OpenSSL, `jq` e `yq` v4 de mikefarah. Inicie o Docker. Para restaurar credenciais, tenha também SOPS e a chave age que abre os backups. Para a instalação manual, use a CLI do Argo CD. A referência testada usa macOS, Docker Desktop e Kubernetes `v1.37.0`. O Git local precisa de acesso de leitura à revisão remota.
+No ambiente em que testei a POC, usei macOS, Docker Desktop e Kubernetes `v1.37.0`. Antes de começar, instale Bash, Docker, Git, Minikube, `kubectl`, Helm, OpenSSL, `jq` e `yq` v4 de mikefarah, e deixe o Docker em execução. Se for restaurar os Secrets, tenha SOPS e a chave age dos backups à mão. Para seguir os passos manuais, instale também a CLI do Argo CD.
 
 ~~~bash
 git clone https://github.com/fastII/pocdevopsmirante.git
@@ -63,19 +61,19 @@ cd pocdevopsmirante
 bash scripts/provision-minikube.sh --help
 ~~~
 
-Use uma cópia atualizada do repositório. As aplicações leem os manifests em `main`. O script confere os arquivos GitOps do clone com o remoto antes de iniciar.
+Use um clone atualizado e confirme que o Git local tem acesso de leitura ao repositório. Antes de iniciar, o script compara os arquivos GitOps locais com a branch `main` que o Argo CD vai ler.
 
 ### 2. Instalar do zero ou restaurar os Secrets
 
-**Instalação nova.** O script inicia o perfil, gera o certificado local e solicita as credenciais ausentes. Use o usuário do GitHub para iniciar o prompt de token HTTPS do Argo CD. O PAT precisa de acesso de leitura ao repositório.
+**Instalação nova.** Informe seu usuário do GitHub ao iniciar o script. Ele sobe o Minikube, gera o certificado local e pede as credenciais que ainda faltam. Quando pedir o token do Argo CD, use um PAT com acesso de leitura ao repositório.
 
 ~~~bash
 GITOPS_USERNAME=seu-usuario-github bash scripts/provision-minikube.sh --servir
 ~~~
 
-Para automatizar os prompts, o script aceita `GITOPS_TOKEN`, `HARBOR_ADMIN_PASSWORD`, `SONAR_MONITORING_PASSCODE` e `GRAFANA_PASSWORD`. Forneça-os pelo ambiente.
+Se você já tiver as credenciais, pode passá-las pelo ambiente com `GITOPS_TOKEN`, `HARBOR_ADMIN_PASSWORD`, `SONAR_MONITORING_PASSCODE` e `GRAFANA_PASSWORD`.
 
-**Restauração em outra máquina ou reexecução.** Copie os backups `*.enc.yaml` e mantenha a chave privada fora do Git e do Minikube. O diretório padrão é `infra/secrets`. Use `SECRETS_DIR` para apontar para outro local.
+**Restauração em outra máquina ou reexecução.** Leve os arquivos `*.enc.yaml` e a chave age usada para abri-los. Mantenha a chave privada fora do Git e do Minikube. O script procura os backups em `infra/secrets` por padrão. Se estiverem em outra pasta, informe o caminho em `SECRETS_DIR`.
 
 ~~~bash
 export SOPS_AGE_KEY_FILE="/caminho/seguro/chave.agekey"
@@ -91,19 +89,17 @@ bash scripts/provision-minikube.sh --restaurar-secrets --servir
 | `gitops-repo.enc.yaml` | `argocd/provision-gitops-repo` | `type`, `url`, `username`, `password` |
 | `arc.enc.yaml` | `arc-runners/arc-github-app` | `github_app_id`, `github_app_installation_id`, `github_app_private_key` |
 
-Cada arquivo guarda um manifesto `Secret`. A restauração reaplica os valores presentes no backup. O Secret do ARC só é restaurado com `--com-arc`. O Git local usa a própria autenticação, inclusive quando o PAT do Argo CD vem do backup.
+Na restauração, o script reaplica as credenciais de cada backup e inclui o Secret do ARC se você passar `--com-arc`. Mesmo com o token do Argo CD restaurado, o Git da máquina continua usando suas próprias credenciais para consultar o remoto.
 
-Um perfil novo cria bancos e volumes vazios. Backups SOPS recuperam credenciais. As imagens e os metadados do Harbor, o histórico do SonarQube e os dashboards criados à mão exigem backups próprios. Para preservar o perfil atual, use `minikube -p minikube stop` e depois `minikube -p minikube start`. Excluir o perfil apaga seus dados locais. Confira os backups antes de reconstruir na mesma máquina.
+Um perfil novo começa com bancos e volumes vazios. Os backups SOPS recuperam as credenciais. Para recuperar também as imagens e os metadados do Harbor, o histórico do SonarQube ou os dashboards criados à mão, você precisa dos backups desses dados. Se a ideia é apenas desligar o laboratório e voltar depois, use `minikube -p minikube stop` e `minikube -p minikube start`. Confira seus backups antes de excluir um perfil, pois a exclusão apaga os dados locais.
 
 ### 3. Acompanhar a instalação e abrir as interfaces
 
-1. O script inicia ou reutiliza o Minikube, habilita o Metrics Server e confere a StorageClass `standard`.
-2. Instala o Argo CD, aguarda o `repo-server` e aplica os AppProjects.
-3. Instala os CRDs da Gateway API `v1.6.3` Standard e prepara TLS e Secrets.
-4. Aplica `platform-root` e confirma a revisão. Aguarda o Traefik, Harbor, SonarQube e as rotas.
-5. Aguarda o Kyverno e a API `ValidatingPolicy`. Se a política já tiver falhado especificamente por falta dessa API, solicita uma tentativa após a API ficar disponível.
-6. Instala a observabilidade por padrão. ARC é opcional. O deploy da POCAPP segue pelo Argo CD e a observabilidade pode subir enquanto a imagem ainda é publicada.
-7. Com `--servir`, abre as portas locais `8443` para HTTPS e `8080` para HTTP. Mantenha o terminal aberto durante o uso.
+O script começa pelo Minikube. Ele reaproveita o perfil quando já existe, habilita o Metrics Server e confere a StorageClass `standard`. Em seguida, instala o Argo CD, espera o `repo-server` ficar pronto e prepara os AppProjects, os CRDs da Gateway API Standard `v1.6.3`, o certificado e os Secrets.
+
+Depois de aplicar `platform-root`, o script confere a revisão do Git e aguarda o Traefik, o Harbor, o SonarQube e as rotas. Ele também espera a API `ValidatingPolicy` do Kyverno. Se a política falhou porque a API ainda estava indisponível, o script pede ao Argo CD que tente de novo. A observabilidade sobe por padrão, mesmo enquanto a imagem da POCAPP ainda está sendo publicada.
+
+Quando você usa `--servir`, o script deixa o encaminhamento aberto em `8443` para HTTPS e `8080` para HTTP. Mantenha o terminal aberto enquanto estiver usando esses endereços.
 
 | Serviço | Acesso com `--servir` |
 | --- | --- |
@@ -113,7 +109,7 @@ Um perfil novo cria bancos e volumes vazios. Backups SOPS recuperam credenciais.
 | Grafana | `https://grafana.localhost:8443` |
 | POCAPP, quando a imagem estiver disponível | `https://healthz.localhost:8443/healthz` |
 
-O certificado local é autoassinado. Use `--acesso-corporativo` para abrir um túnel com portas dinâmicas e consulte a porta HTTPS anunciada pelo Minikube. Para abrir a porta fixa depois, execute o `port-forward` abaixo. Use `--sem-observabilidade` para uma instalação mais leve e `--com-arc` para instalar o runner no cluster. [Acesso no Minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/) · [TLS local](infra/certs/01-install-certs.md)
+O certificado HTTPS do laboratório é autoassinado. Se precisar de portas dinâmicas, use `--acesso-corporativo` e consulte a porta HTTPS que o Minikube informar. Se preferir abrir só as portas fixas do Traefik depois, use o comando abaixo. Passe `--sem-observabilidade` para pular a stack ou `--com-arc` para instalar o runner no cluster. [Acesso no Minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/) · [TLS local](infra/certs/01-install-certs.md)
 
 ~~~bash
 kubectl --context minikube -n traefik port-forward --address localhost svc/traefik 8443:443 8080:80
@@ -121,12 +117,14 @@ kubectl --context minikube -n traefik port-forward --address localhost svc/traef
 
 ## Instalação manual
 
+Se quiser acompanhar o que o script faz ou refazer uma etapa específica, siga o passo a passo abaixo.
+
 <details>
 <summary>Passos manuais do bootstrap ao Gateway</summary>
 
 ### 1. Iniciar o perfil
 
-Em um Mac com 16 GiB, a referência de partida foi 8 GiB no Docker Desktop. A stack com builds pode exigir mais memória conforme o uso do host. `no-limit` deixa o teto de recursos no Docker Desktop. Consulte o consumo efetivo antes de executar jobs ARC. [Configurações do Docker Desktop](https://docs.docker.com/desktop/settings-and-maintenance/settings/) · [Auditoria e capacidade](evidence/Dificuldades.md)
+No Mac de 16 GiB que usei, comecei com 8 GiB no Docker Desktop. Com `no-limit`, é o Docker Desktop que define o teto de CPU e memória. A plataforma e os builds disputam esses recursos, então confira o consumo antes de rodar jobs no ARC. [Configurações do Docker Desktop](https://docs.docker.com/desktop/settings-and-maintenance/settings/) · [Auditoria e capacidade](evidence/Dificuldades.md)
 
 ~~~bash
 docker info --format 'CPUs={{.NCPU}} RAM={{.MemTotal}}'
@@ -204,19 +202,19 @@ kubectl wait --for=condition=Established crd/validatingpolicies.policies.kyverno
 kubectl get --raw /apis/policies.kyverno.io/v1
 ~~~
 
-Se `kyverno-policies` já tiver falhado por API ausente, execute `argocd app sync kyverno-policies` depois de confirmar `ValidatingPolicy` no resultado. Em seguida, aguarde `argocd app wait kyverno-policies --sync --timeout 300`. Confira `Accepted=True` e `ResolvedRefs=True` nas rotas de plataforma. [Guia do Kyverno](infra/kyverno/01-install-kyverno.md)
+Se o Argo CD tentou aplicar `kyverno-policies` enquanto a API ainda estava subindo, espere `ValidatingPolicy` aparecer no resultado e rode `argocd app sync kyverno-policies`. Depois, aguarde com `argocd app wait kyverno-policies --sync --timeout 300`. Para confirmar que as rotas da plataforma foram aceitas e que suas referências existem, procure `Accepted=True` e `ResolvedRefs=True`. [Guia do Kyverno](infra/kyverno/01-install-kyverno.md)
 
 ### 5. Instalar ARC quando necessário
 
-Configure o AppProject, os namespaces, o Secret da GitHub App e o repositório Helm OCI. Aplique o controller, aguarde seu rollout e instale o scale set. Confira o listener e execute um job com o `runs-on` do scale set. O ARC pode ficar sem pods de runner enquanto estiver ocioso. [GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md) · [Instalação e teste do ARC](infra/gitops/arc-minikube/README.md)
+Se você quiser rodar jobs do GitHub Actions dentro do cluster, prepare o AppProject, os namespaces, o Secret da GitHub App e o repositório Helm OCI. Instale o controller e espere o rollout antes de criar o scale set. Para testar, confira o listener e dispare um job com o `runs-on` do scale set. É normal o ARC ficar sem pods de runner enquanto aguarda trabalho. [GitHub App](infra/gitops/arc-minikube/01-install-arc-github.md) · [Instalação e teste do ARC](infra/gitops/arc-minikube/README.md)
 
 </details>
 
 ## Observabilidade
 
-O provisionamento inclui Prometheus, Alertmanager, Grafana, Loki e Alloy. Dentro da stack, somente o Grafana tem `HTTPRoute`. Prometheus usa intervalos padrão de 60 segundos e retenção de dois dias. Loki retém logs por 48 horas e usa um PVC de 5 GiB. Alloy coleta logs de pods para o Loki. [Values e validação da observabilidade](infra/gitops/observability-minikube/README.md)
+Depois da instalação, abra o Grafana pelo Traefik para ver o que acontece no cluster. O Prometheus coleta as métricas, o Alertmanager encaminha os alertas e o Alloy envia os logs dos pods para o Loki. No laboratório, o Prometheus usa intervalos de 60 segundos e guarda dois dias de métricas. O Loki guarda 48 horas de logs em um PVC de 5 GiB. [Values e validação da observabilidade](infra/gitops/observability-minikube/README.md)
 
-Para instalar a stack manualmente, use a CLI do Argo CD autenticada e confirme o Gateway. Crie o Secret do Grafana se estiver ausente. Execute na raiz do repositório.
+O script já instala essa stack. Se estiver seguindo a instalação manual, confirme que o Gateway está pronto e que você já entrou na CLI do Argo CD. Rode os comandos na raiz do repositório. Eles criam o Secret do Grafana se ele ainda estiver ausente.
 
 ~~~bash
 kubectl --context minikube create namespace observability --dry-run=client -o yaml |
@@ -237,7 +235,7 @@ argocd app wait obs-grafana-route --sync --timeout 300
 kubectl --context minikube -n observability describe httproute grafana
 ~~~
 
-Abra o Grafana e consulte `up` no Prometheus e `{namespace="argocd"}` no Loki. Para diagnosticar coleta, consulte os pods e os logs do Alloy. A rota do Grafana deve reportar `Accepted=True` e `ResolvedRefs=True`.
+Para uma primeira checagem no Grafana, consulte `up` no Prometheus e `{namespace="argocd"}` no Loki. Se os logs não aparecerem, confira os pods e os logs do Alloy. Se a interface não abrir, veja se a rota do Grafana mostra `Accepted=True` e `ResolvedRefs=True`.
 
 <details>
 <summary>Ver métricas e logs no Grafana</summary>
@@ -252,9 +250,9 @@ Abra o Grafana e consulte `up` no Prometheus e `{namespace="argocd"}` no Loki. P
 
 ### Imagem e execução local
 
-A API Node.js está em `app/` e o chart em `helm/pocapp/`. O deployment estável usa requests de 25m de CPU e 32 MiB de memória, limites de 100m e 128 MiB, e probes em `/healthz`. O Argo CD cria os recursos pelo chart publicado. [Application da POCAPP](infra/gitops/applications/pocapp.yaml) · [Values da POCAPP](helm/pocapp/values.yaml)
+A POCAPP é uma API Node.js que responde em `/healthz`. O endpoint serve às sondagens do Kubernetes e mostra qual versão respondeu, o que ajuda a demonstrar o canary. O código está em `app/` e o Argo CD instala o chart em `helm/pocapp/`. No Deployment estável, reservei 25m de CPU e 32 MiB de memória, com limites de 100m e 128 MiB. [Application da POCAPP](infra/gitops/applications/pocapp.yaml) · [Values da POCAPP](helm/pocapp/values.yaml)
 
-O pipeline constrói a imagem. Para entregar um arquivo OCI ou Docker existente no bootstrap, use `POCAPP_IMAGE_ARCHIVE` com política `IfNotPresent` ou `Never`. Para registry privado, forneça `POCAPP_DOCKER_CONFIG` e declare o Secret em `imagePullSecrets`. Em um perfil recém-criado, o cache local de imagens começa vazio.
+O cache de imagens começa vazio quando você cria um perfil. O caminho normal é deixar o pipeline construir e entregar a imagem. Se você já tiver um arquivo OCI ou Docker, pode carregá-lo no provisionamento com `POCAPP_IMAGE_ARCHIVE` e política `IfNotPresent` ou `Never`. Para usar um registry privado, informe `POCAPP_DOCKER_CONFIG` e declare o Secret em `imagePullSecrets`.
 
 <details>
 <summary>Executar a POCAPP separadamente</summary>
@@ -269,7 +267,7 @@ npm --prefix app start
 
 Em outro terminal, `curl -i http://127.0.0.1:3000/healthz` deve retornar HTTP 200 e `healthy`. Para empacotar o chart, use `helm package helm/pocapp`.
 
-Quando precisar construir a imagem localmente para um teste fora do provisionador, use a referência publicada em `main`. Exemplo com a referência padrão.
+Se quiser construir a imagem dentro do Minikube para um teste local, use o repositório e a tag que estão em `main`. O exemplo usa a referência inicial do chart.
 
 ~~~bash
 minikube -p minikube image build -t healthz-api:1.0.0 ./app
@@ -291,20 +289,18 @@ Para acompanhar um deploy da aplicação isoladamente, use `argocd app wait poca
 | `POCAPP_IMAGE_PLATFORM` | Padrão `linux/arm64`. Use `linux/amd64` no nó Intel/AMD |
 | `POCAPP_IMAGE_DELIVERY` | Define o modo padrão de entrega do workflow |
 
-O runner hospedado executa o build e o scan com Trivy. O runner `self-hosted` executa a análise Sonar e entrega o artefato. Para acesso local, o runner precisa de `kubectl`, `jq` e acesso ao contexto `minikube`. Configure o projeto `pocapp` e gere o token de análise. [SonarQube](infra/sonarqube/01-install-sonarqube.md#3-conectar-ao-pipeline) · [Workflow da POCAPP](.github/workflows/pocapp-ci-cd.yaml)
+O runner hospedado pelo GitHub constrói a imagem e gera o relatório do Trivy. A análise do SonarQube e a entrega da imagem rodam no runner `self-hosted`, que alcança os serviços locais. Na máquina do runner, tenha `kubectl`, `jq` e acesso ao contexto `minikube`. No SonarQube, crie o projeto `pocapp` e gere o token de análise. [SonarQube](infra/sonarqube/01-install-sonarqube.md#3-conectar-ao-pipeline) · [Workflow da POCAPP](.github/workflows/pocapp-ci-cd.yaml)
 
-O scanner e o Quality Gate usam o mesmo túnel em `http://127.0.0.1:<porta-dinâmica>`. Para usar o Traefik com o runner na mesma máquina, mantenha `--servir` ativo e configure `SONAR_HOST_URL=http://sonarqube.localhost:8080`. Para acesso de outra máquina, use HTTPS com certificado confiável pelo runner.
+Na configuração local padrão, o scanner e o Quality Gate usam o mesmo túnel em `http://127.0.0.1:<porta-dinâmica>`. Se preferir passar pelo Traefik com o runner na mesma máquina, mantenha `--servir` ativo e defina `SONAR_HOST_URL=http://sonarqube.localhost:8080`. Para um runner em outra máquina, use HTTPS com um certificado em que ele confie.
 
 - **Entrega local.** Em **Actions → POCAPP - CI & CD → Run workflow**, selecione `main`, `deploy_target: stable` e `image_delivery: minikube-local`. O runner carrega o artefato no perfil antes de publicar a tag no Git. Preserve o arquivo se precisar reconstruir o ambiente.
 - **Entrega via Harbor local.** No Docker Desktop, adicione `host.docker.internal:8081` a `insecure-registries` e mantenha `--servir` em execução na máquina do runner. Configure `HARBOR_REGISTRY=host.docker.internal:8081` e `HARBOR_PROJECT=poc`. O provisionador abre HTTP direto ao Harbor em `8081` e configura o containerd para esse endereço. A interface do Harbor usa o Traefik em `8080` ou `8443`. O projeto público permite pull anônimo e o push exige uma credencial com permissão de escrita. Para imagens privadas, configure `imagePullSecrets` no namespace `apps`. [Configuração do Harbor](infra/harbor/01-install-harbor.md#3-preparar-o-registry-para-a-aplicação)
 
 ### Escolher os inputs do pipeline
 
-Em **Actions → POCAPP - CI & CD → Run workflow**, selecione a branch `main`. As duas opções do formulário são independentes.
+Para rodar o pipeline manualmente, abra **Actions → POCAPP - CI & CD → Run workflow** e selecione `main`. O formulário faz duas perguntas. Qual versão você quer atualizar e por onde o Minikube vai receber a imagem?
 
 ![Formulário Run workflow com main, as opções canary e stable em deploy_target e harbor em image_delivery](evidence/capturas/pocapp-workflow-inputs.png)
-
-O print mostra `stable` selecionado. Para iniciar uma candidata pelo Harbor na demonstração, escolha `canary` e mantenha `harbor`. Comece com `canary.enabled: false`. O job GitOps preenche a tag e habilita a candidata com peso `0` depois da publicação da imagem.
 
 | Input | Opção | Efeito |
 | --- | --- | --- |
@@ -313,17 +309,19 @@ O print mostra `stable` selecionado. Para iniciar uma candidata pelo Harbor na d
 | `image_delivery` | `harbor` | Publica a imagem no repositório configurado e registra a referência no Git |
 | `image_delivery` | `minikube-local` | Carrega a imagem no nó do Minikube e registra a referência local no Git |
 
-O pipeline valida o código e o Helm chart, aguarda o Quality Gate, constrói e entrega a imagem e então executa **GitOps - Atualizar imagem no Helm**. O bump aparece em `main` quando esse último job publica o commit. O Argo CD então reconcilia a revisão. A tag segue o formato `sha-<12 primeiros caracteres do commit>`.
+Na captura, o formulário está pronto para atualizar a versão estável usando o Harbor. Para demonstrar um canary, escolha `canary` e mantenha `harbor`. Comece com `canary.enabled: false` e use uma candidata com tag diferente da estável. Depois que a imagem for publicada, o job GitOps registra a tag da candidata e o Argo CD sobe seus pods com peso `0` na rota.
 
-Uma execução por push em `main` publica a versão estável por padrão, conforme os filtros do workflow. Para preparar a demonstração via formulário, use uma candidata com tag distinta da versão estável. O campo `version` do `/healthz` vem da tag definida no Deployment. Uma alteração apenas em `helm/pocapp/values.yaml` segue para o Argo CD sem disparar outro build. [Workflow de CI/CD](.github/workflows/pocapp-ci-cd.yaml)
+Onde aparece a nova tag? Depois de validar o código e o chart, passar pelo Quality Gate e entregar a imagem, o job **GitOps - Atualizar imagem no Helm** grava a referência em `main`. A tag segue o formato `sha-<12 primeiros caracteres do commit>`. O Argo CD aplica essa revisão e o campo `version` do `/healthz` mostra a tag que chegou ao Deployment.
+
+Quando um push em `main` dispara o workflow, o destino padrão é `stable`. Alterações só em `helm/pocapp/values.yaml`, como o ajuste de peso do canary, vão direto para o Argo CD sem disparar outro build. [Workflow de CI/CD](.github/workflows/pocapp-ci-cd.yaml)
 
 ### Resumo da execução
 
-Na aba **Summary** do GitHub Actions, o job **Resumo do pipeline** apresenta o resultado de cada etapa, a imagem entregue, o destino `stable` ou `canary` e o link para a revisão GitOps quando disponível. O resumo também é gerado quando uma etapa falha. A confirmação do deploy acontece no Argo CD.
+Quando a execução terminar, abra a aba **Summary**. Ali você consegue ver até onde o pipeline chegou, qual imagem entregou e qual revisão publicou no Git. Se alguma etapa falhar, o resumo marca a falha e indica quais jobs foram ignorados. Para confirmar que a versão entrou no ar, abra a POCAPP no Argo CD e confira a sincronização e a saúde da aplicação.
 
-A captura mostra a execução nº 49 em que os cinco jobs de CI/CD concluíram com sucesso. [Execução no GitHub Actions](https://github.com/fastII/pocdevopsmirante/actions/runs/45063520671)
+Na execução abaixo, os seis jobs ficaram verdes em 2 min 33 s. O pipeline publicou a imagem `sha-4745f28c1159` no Harbor para o destino `stable` e registrou a atualização na revisão GitOps `4e6054b43b59`.
 
-![Pipeline da POCAPP com os jobs de validação, SonarQube, build, entrega e GitOps concluídos com sucesso](evidence/capturas/07-pocapp-05-pipeline-sucesso.png)
+![Aba Summary da execução da POCAPP com os seis jobs em verde, a imagem publicada no Harbor e a revisão GitOps](evidence/capturas/07-pocapp-06-pipeline-summary.png)
 
 ### Canary com Traefik
 
@@ -368,11 +366,11 @@ Em um teste isolado no Minikube, o peso `10` produziu 90 respostas da estável e
 | `ImagePullBackOff` no primeiro deploy | A imagem `healthz-api:1.0.0` faltava no cache do containerd. O pipeline passou a entregar pelo Harbor ou carregar o artefato no nó. A plataforma segue com a instalação da observabilidade |
 | Acesso sem sudo no Mac corporativo | `minikube tunnel` demandava portas privilegiadas. O encaminhamento HTTPS do script usa a porta local `8443`. `--acesso-corporativo` permite usar as portas dinâmicas do Minikube |
 
-Os contornos, capturas, medições de PSI e sequência de recuperação estão nas evidências. O impacto dos ajustes de recursos deve ser medido com a carga do ambiente. [Dificuldades e medições](evidence/Dificuldades.md) · [Capturas e procedimentos](evidence/Provisionamento.md#9-incidentes-de-provisionamento)
+Registrei nas evidências o que medi, as tentativas que fiz e a sequência que usei para recuperar o ambiente. Se você estiver usando outra máquina, compare os números sob a sua carga antes de adotar os mesmos limites de recursos. [Dificuldades e medições](evidence/Dificuldades.md) · [Capturas e procedimentos](evidence/Provisionamento.md#9-incidentes-de-provisionamento)
 
 ### Diagnosticar um timeout
 
-Identifique a última etapa emitida pelo script e confira a fase e os eventos da Application correspondente. Registre o SHA reconciliado e verifique os PVCs. Em caso de pressão no nó, comece pelo Docker e pelo `/readyz` se o Metrics Server estiver indisponível.
+Se o script parar em um timeout, comece pela última etapa que apareceu no terminal. Veja a fase e os eventos da Application correspondente, anote o SHA que o Argo CD tentou aplicar e confira os PVCs. Se suspeitar de pressão no nó e o Metrics Server estiver indisponível, confira o Docker e o `/readyz` primeiro.
 
 ~~~bash
 docker stats --no-stream minikube
@@ -401,5 +399,3 @@ kubectl --context minikube top pods -A --sort-by=memory
 - Exercitar a recuperação de bancos, registries e dashboards em perfis isolados. Registrar os tempos de recuperação, as dependências e o resultado de cada restauração.
 - Ampliar os controles de cadeia de suprimentos com imagens imutáveis, validação de assinaturas e políticas de admissão após observar os relatórios de auditoria.
 - Experimentar agentes com acesso somente leitura a Kubernetes e Prometheus para correlacionar métricas, eventos e logs. As mudanças operacionais exigem evidências e revisão humana.
-
-A POC registra decisões e problemas reproduzidos no laboratório. O valor está nas integrações e na capacidade de repetir a instalação e recuperar o ambiente com passos que outra pessoa consiga seguir.

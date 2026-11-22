@@ -183,7 +183,7 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 ## 7. POCAPP
 
 <details>
-<summary>Ver 5 capturas</summary>
+<summary>Ver 6 capturas</summary>
 
 **19/11/2026 18:17:39** — Criação e estrutura inicial do chart `helm/pocapp`.
 
@@ -204,6 +204,10 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 **22/11/2026 17:28:39** — Execução nº 49 concluída com sucesso da validação Node.js e Helm à atualização GitOps. [Execução no GitHub Actions](https://github.com/fastII/pocdevopsmirante/actions/runs/45063520671)
 
 ![Execução nº 49 do pipeline com os cinco jobs em verde](capturas/07-pocapp-05-pipeline-sucesso.png)
+
+**22/11/2026 17:36:57** — A aba **Summary** mostra os seis jobs em verde, a imagem entregue ao Harbor para a versão estável e a revisão GitOps `4e6054b43b59`.
+
+![Resumo do pipeline com os seis jobs concluídos com sucesso, a imagem entregue e a revisão GitOps](capturas/07-pocapp-06-pipeline-summary.png)
 
 </details>
 
