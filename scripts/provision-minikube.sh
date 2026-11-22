@@ -1,17 +1,32 @@
 #!/usr/bin/env bash
+# Reexecutar reconcilia o ambiente e reutiliza os Secrets existentes.
+# Após minikube delete, credenciais e dados precisam de fontes externas.
+# Este script não faz backup nem restaura os dados dos PVCs.
 set -Eeuo pipefail
 umask 077
 
 profile=minikube
-arc=true
+# Os workflows atuais usam o runner self-hosted externo ao cluster.
+arc=false
 observability=true
 serve=false
+corporate_access=false
+restore_secrets=false
+secrets_dir="${SECRETS_DIR:-infra/secrets}"
 
 usage() {
   cat <<'HELP'
-Uso: bash scripts/provision-minikube.sh [--sem-arc] [--sem-observabilidade] [--servir]
+Uso: bash scripts/provision-minikube.sh [--com-arc] [--sem-observabilidade]
+       [--restaurar-secrets] [--servir | --acesso-corporativo]
 
 Instala a plataforma no perfil minikube. Reutiliza os Secrets existentes.
+  --com-arc              Instala o ARC no cluster. Por padrão usa-se o runner externo.
+  --sem-arc              Mantém o ARC fora deste provisionamento (padrão).
+  --restaurar-secrets    Lê backups SOPS de Harbor, SonarQube e Grafana.
+                        Configure SECRETS_DIR e SOPS_AGE_KEY_FILE.
+  --servir              Mantém o port-forward HTTPS na porta local 8443.
+  --acesso-corporativo  Abre o Traefik com minikube service, sem editar /etc/hosts.
+
 Variáveis opcionais para provisionamento sem prompts:
   HARBOR_ADMIN_PASSWORD, SONAR_MONITORING_PASSCODE, GRAFANA_PASSWORD
   ARC_APP_ID, ARC_INSTALLATION_ID, ARC_PRIVATE_KEY_FILE
@@ -23,9 +38,12 @@ HELP
 
 while (( $# )); do
   case "$1" in
+    --com-arc) arc=true ;;
     --sem-arc) arc=false ;;
     --sem-observabilidade) observability=false ;;
+    --restaurar-secrets) restore_secrets=true ;;
     --servir) serve=true ;;
+    --acesso-corporativo) corporate_access=true ;;
     --help|-h) usage; exit 0 ;;
     *) printf 'Opção desconhecida: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -37,9 +55,24 @@ log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'Erro: %s\n' "$*" >&2; exit 1; }
 trap 'printf "Falha na linha %s. Corrija o erro acima e rode o script novamente.\n" "$LINENO" >&2' ERR
 
+if "$serve" && "$corporate_access"; then
+  die 'Escolha --servir ou --acesso-corporativo.'
+fi
+
 for cmd in docker minikube kubectl helm git jq yq openssl; do
   command -v "$cmd" >/dev/null || die "Instale $cmd antes de executar."
 done
+if "$restore_secrets"; then
+  command -v sops >/dev/null || die 'Instale sops para restaurar Secrets.'
+  [[ -r "${SOPS_AGE_KEY_FILE:-}" && -f "${SOPS_AGE_KEY_FILE:-}" ]] ||
+    die 'Configure SOPS_AGE_KEY_FILE com a chave age guardada fora do cluster.'
+  [[ -d "$secrets_dir" ]] || die "Diretório de backups SOPS inexistente: $secrets_dir."
+  if [[ ! -f "$secrets_dir/harbor.enc.yaml" && ! -f "$secrets_dir/sonarqube.enc.yaml" ]]; then
+    if ! "$observability" || [[ ! -f "$secrets_dir/grafana.enc.yaml" ]]; then
+      die 'Nenhum backup SOPS para os componentes selecionados.'
+    fi
+  fi
+fi
 yq --version | grep -Eq 'mikefarah/yq.*v4\.' || die 'Use o yq v4 de mikefarah.'
 docker info >/dev/null || die 'Inicie o Docker Desktop.'
 
@@ -54,6 +87,7 @@ untracked=$(git ls-files --others --exclude-standard -- infra/gitops infra/secur
 [[ -z "$untracked" ]] || die 'Há arquivos não versionados nas pastas do provisionamento. Confira git status.'
 printf 'SHA GitOps: %s\n' "$revision"
 
+# Arquivos temporários com permissão restrita para a emissão do TLS e os prompts.
 scratch=$(mktemp -d)
 cleanup() {
   rm -f -- "$scratch"/tls.crt "$scratch"/tls.key "$scratch"/username "$scratch"/password
@@ -87,6 +121,39 @@ secret_exists() {
   [[ -n "$found" ]]
 }
 
+# Restaura somente o Secret esperado. kubectl create preserva um Secret que
+# surgir entre a consulta e a criação. O YAML claro passa apenas pelo pipe.
+restore_secret() {
+  local file=$1 ns=$2 name=$3
+  shift 3
+  [[ -f "$file" ]] || return 0
+  if secret_exists "$ns" "$name"; then
+    log "Preservando Secret existente $ns/$name"
+    return 0
+  fi
+  log "Restaurando Secret $ns/$name do backup SOPS"
+  if ! sops decrypt --output-type json "$file" |
+    jq -cse --arg ns "$ns" --arg name "$name" '
+      if length == 1 and (.[0] |
+        .apiVersion == "v1" and .kind == "Secret"
+        and .metadata.namespace == $ns and .metadata.name == $name
+        and ((.type // "Opaque") == "Opaque")
+        and ((.data // {}) | type == "object")
+        and ((.stringData // {}) | type == "object")
+        and ((.data // {}) + (.stringData // {}) |
+          . as $values | all($ARGS.positional[];
+            ($values[.] | type == "string" and length > 0))))
+      then .[0] | {
+        apiVersion, kind, metadata: {name: $name, namespace: $ns},
+        type: "Opaque", data: (.data // {}), stringData: (.stringData // {})
+      }
+      else error("O backup precisa conter somente o Secret esperado e suas chaves obrigatórias.")
+      end
+    ' --args "$@" | k create -f -; then
+    die "Falha ao restaurar $ns/$name de $file."
+  fi
+}
+
 prompt() {
   local variable=$1 label=$2 mode=${3:-text} answer
   [[ -z "${!variable:-}" ]] || return 0
@@ -112,6 +179,8 @@ password_secret() {
   unset "$var_name"
 }
 
+# As operações manuais usam prune=false. Cada Application mantém sua própria
+# política de auto-sync. A retenção de dados depende também de PVC/PV e chart.
 app_ready() {
   app "$1" -o json 2>/dev/null | jq -e --arg mode "$2" --arg sha "${3:-}" '
     .status.sync.status == "Synced"
@@ -179,6 +248,7 @@ service_healthy() {
   k --request-timeout=10s get --raw="$1" 2>/dev/null | jq -e '.status == "healthy"' >/dev/null
 }
 
+# 1. Bootstrap. Preserva o perfil e prepara o Argo CD e as APIs usadas pelas apps.
 log 'Preparando Minikube e Metrics Server'
 if ! m status >/dev/null 2>&1; then
   if docker container inspect "$profile" >/dev/null 2>&1; then
@@ -217,6 +287,17 @@ k apply --server-side \
 k wait --for=condition=Established --timeout=120s \
   crd/gateways.gateway.networking.k8s.io crd/httproutes.gateway.networking.k8s.io
 for ns in traefik harbor sonarqube apps; do namespace "$ns"; done
+if "$observability"; then namespace observability; fi
+
+# 2. Credenciais. Restaura os backups disponíveis antes dos prompts.
+if "$restore_secrets"; then
+  restore_secret "$secrets_dir/harbor.enc.yaml" harbor harbor-admin HARBOR_ADMIN_PASSWORD
+  restore_secret "$secrets_dir/sonarqube.enc.yaml" sonarqube sonarqube-monitoring monitoringPasscode
+  if "$observability"; then
+    restore_secret "$secrets_dir/grafana.enc.yaml" observability grafana-admin admin-user admin-password
+  fi
+fi
+
 if ! secret_exists traefik local-selfsigned-tls; then
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "$scratch/tls.key" -out "$scratch/tls.crt" -subj '/CN=*.localhost' \
@@ -242,7 +323,6 @@ if "$arc"; then
   fi
 fi
 if "$observability"; then
-  namespace observability
   password_secret observability grafana-admin admin-password GRAFANA_PASSWORD 'Senha inicial do Grafana' \
     --from-literal=admin-user=admin
 fi
@@ -272,6 +352,7 @@ else
   printf 'POCAPP usará %s:%s. O registry e a tag precisam estar disponíveis para o Minikube.\n' "$image_repo" "$image_tag"
 fi
 
+# 3. GitOps. Cria o pai depois que os Secrets e a imagem estiverem disponíveis.
 log 'Criando Applications filhas pelo platform-root'
 k apply -f infra/gitops/bootstrap/root-app.yaml
 wait_app platform-root 240 sync "$revision"
@@ -337,14 +418,23 @@ k get pvc -A
 k get gateway,httproute -A
 docker stats --no-stream "$profile"
 printf '\nProvisionamento concluído para a revisão %s.\n' "$revision"
-if ! "$arc"; then printf 'ARC omitido por opção.\n'; fi
+if ! "$arc"; then printf 'ARC fora deste provisionamento. Use --com-arc para instalá-lo.\n'; fi
 if ! "$observability"; then printf 'Observabilidade omitida por opção.\n'; fi
 if a get secret argocd-initial-admin-secret >/dev/null 2>&1; then
   printf "Para obter a senha inicial do Argo CD, consulte argocd-initial-admin-secret no namespace argocd.\n"
 fi
-printf 'Abra https://argocd.localhost:8443 com o encaminhamento abaixo. O TLS local é autoassinado.\n'
-if "$serve"; then
+# As HTTPRoutes usam o hostname e o TLS termina no listener websecure.
+if "$corporate_access"; then
+  log 'Acesso corporativo pelo Traefik'
+  printf 'Use a porta encaminhada para websecure. Se houver túnel, mantenha este terminal aberto.\n'
+  printf 'Abra https://argocd.localhost:PORTA_HTTPS; substitua PORTA_HTTPS pela porta anunciada.\n'
+  printf '%s\n' "Teste local para o túnel: curl -k --noproxy '*' --resolve 'sonarqube.localhost:PORTA_HTTPS:127.0.0.1' 'https://sonarqube.localhost:PORTA_HTTPS/api/server/version'"
+  m service traefik -n traefik --url
+elif "$serve"; then
+  printf 'Abra https://argocd.localhost:8443. O TLS local é autoassinado.\n'
   k -n traefik port-forward svc/traefik 8443:443
 else
+  printf 'Acesso local com porta fixa ou pelo encaminhamento do Minikube:\n'
   printf 'kubectl --context minikube -n traefik port-forward svc/traefik 8443:443\n'
+  printf 'minikube -p minikube service traefik -n traefik --url\n'
 fi
