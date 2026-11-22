@@ -377,38 +377,24 @@ jobs:
           docker load -i "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
           docker image inspect "healthz-api:${TAG}" > /dev/null
 
-      - name: Iniciar túnel HTTP direto para Harbor
-        if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
+      - name: Verificar o túnel direto do Harbor local
+        if: env.POCAPP_IMAGE_DELIVERY == 'harbor' && steps.reference.outputs.registry == 'host.docker.internal:8081'
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ steps.reference.outputs.registry }}" != 'host.docker.internal:8081' ]]; then
-            echo 'Esta POC usa o túnel HTTP host.docker.internal:8081; ajuste HARBOR_REGISTRY.' >&2
+          headers=$(curl --noproxy '*' -sS --max-time 5 -D - -o /dev/null \
+            -H 'Host: host.docker.internal:8081' http://127.0.0.1:8081/v2/ || true)
+          if ! grep -Eq '^HTTP/[0-9.]+ 401 ' <<< "$headers" ||
+             ! grep -iFq 'realm="http://host.docker.internal:8081/service/token"' <<< "$headers" ||
+             curl --noproxy '*' -ksS --max-time 3 -o /dev/null https://127.0.0.1:8081/v2/ 2>/dev/null; then
+            echo 'Mantenha o provisionador com --servir na máquina do runner. A porta 8081 precisa encaminhar HTTP direto ao Service harbor.' >&2
             exit 1
           fi
-          # Usar 8081 exclusivamente para Harbor; manter 8080/8443 do Traefik intactos.
-          if lsof -nP -iTCP:8081 -sTCP:LISTEN | grep -q LISTEN; then
-            echo 'Porta 8081 ocupada; não interrompa o port-forward existente.' >&2
+          if [[ "$(docker info --format '{{json .RegistryConfig.IndexConfigs}}' |
+            jq -r '."host.docker.internal:8081".Secure')" != false ]]; then
+            echo 'Adicione host.docker.internal:8081 à lista insecure-registries do Docker Desktop.' >&2
             exit 1
           fi
-          log="$RUNNER_TEMP/harbor-port-forward-$GITHUB_RUN_ID.log"
-          kubectl --context minikube -n harbor port-forward --address 0.0.0.0 \
-            svc/harbor 8081:80 > "$log" 2>&1 &
-          pid=$!
-          echo "HARBOR_FORWARD_PID=$pid" >> "$GITHUB_ENV"
-          for i in {1..30}; do
-            if ! kill -0 "$pid" 2>/dev/null; then cat "$log"; exit 1; fi
-            code=$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' \
-              -H 'Host: host.docker.internal:8080' http://127.0.0.1:8081/v2/ || true)
-            if [[ "$code" == 401 ]]; then
-              echo 'Harbor HTTP acessível via túnel direto.'
-              exit 0
-            fi
-            sleep 1
-          done
-          cat "$log" >&2
-          echo 'Harbor não respondeu HTTP 401 na porta 8081.' >&2
-          exit 1
 
       - name: Login no Harbor
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
@@ -432,12 +418,18 @@ jobs:
           docker tag "healthz-api:${TAG}" "${IMAGE}"
           docker push "${IMAGE}"
 
-      - name: Encerrar túnel HTTP do Harbor
-        if: always() && env.POCAPP_IMAGE_DELIVERY == 'harbor'
+      - name: Verificar pull da imagem pública no Minikube
+        if: env.POCAPP_IMAGE_DELIVERY == 'harbor' && steps.reference.outputs.registry == 'host.docker.internal:8081'
+        env:
+          REPOSITORY: ${{ steps.reference.outputs.repository }}
+          PROJECT: ${{ vars.HARBOR_PROJECT }}
         shell: bash
         run: |
-          if [[ -n "${HARBOR_FORWARD_PID:-}" ]]; then
-            kill "$HARBOR_FORWARD_PID" 2>/dev/null || true
+          set -euo pipefail
+          project_info=$(curl --noproxy '*' -sS --max-time 8 -H 'Host: host.docker.internal:8081' \
+            "http://127.0.0.1:8081/api/v2.0/projects/$PROJECT")
+          if jq -e '.metadata.public | . == "true" or . == true' >/dev/null <<< "$project_info"; then
+            docker exec minikube crictl pull "$REPOSITORY:$TAG"
           fi
 
   # ============================================================

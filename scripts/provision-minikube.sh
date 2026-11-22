@@ -68,6 +68,7 @@ OPCOES
   --sem-arc             Desativa ARC (comportamento padrao).
   --servir              Abre HTTP 8080 para SonarQube, Harbor e Grafana via Traefik,
                         e HTTPS 8443 para as rotas configuradas.
+                        No Docker Desktop com containerd, abre o registry direto em 8081.
                         O terminal fica ocupado ate Ctrl+C.
   --acesso-corporativo  Abre o acesso pelo 'minikube service traefik --url'.
                         Usa portas locais dinamicas, sem editar /etc/hosts.
@@ -171,7 +172,12 @@ printf 'SHA GitOps: %s\n' "$revision"
 # Diretorio temporario com permissao restrita para materiais sensiveis.
 scratch=$(mktemp -d)
 cleanup() {
-  rm -f -- "$scratch"/tls.crt "$scratch"/tls.key "$scratch"/username "$scratch"/password
+  if [[ -n "${harbor_forward_pid:-}" ]]; then
+    kill "$harbor_forward_pid" 2>/dev/null || true
+    wait "$harbor_forward_pid" 2>/dev/null || true
+  fi
+  rm -f -- "$scratch"/tls.crt "$scratch"/tls.key "$scratch"/username "$scratch"/password \
+    "$scratch"/harbor-forward.log
   rmdir -- "$scratch"
 }
 trap cleanup EXIT
@@ -329,6 +335,53 @@ check_route() {
 
 service_healthy() {
   k --request-timeout=10s get --raw="$1" 2>/dev/null | jq -e '.status == "healthy"' >/dev/null
+}
+
+harbor_forward_ready() {
+  local headers
+  headers=$(curl --noproxy '*' -sS --max-time 3 -D - -o /dev/null \
+    -H 'Host: host.docker.internal:8081' http://127.0.0.1:8081/v2/ 2>/dev/null) || return 1
+  grep -Eq '^HTTP/[0-9.]+ 401 ' <<< "$headers" &&
+    grep -iFq 'realm="http://host.docker.internal:8081/service/token"' <<< "$headers" &&
+    ! curl --noproxy '*' -ksS --max-time 3 -o /dev/null https://127.0.0.1:8081/v2/ 2>/dev/null
+}
+
+serve_local_harbor() {
+  command -v curl >/dev/null || die 'Instale curl para verificar o túnel local do Harbor.'
+
+  # O containerd usa hosts.toml para escolher HTTP neste endereço.
+  docker exec -i "$profile" sh -s <<'NODE'
+set -eu
+target=/etc/containerd/certs.d/host.docker.internal:8081/hosts.toml
+candidate=$(mktemp)
+trap 'rm -f "$candidate"' EXIT
+cat > "$candidate" <<'TOML'
+server = "http://host.docker.internal:8081"
+
+[host."http://host.docker.internal:8081"]
+  capabilities = ["pull", "resolve"]
+TOML
+if [ -e "$target" ]; then
+  if ! cmp -s "$candidate" "$target"; then
+    printf 'Configuração do registry já existe em %s. Confira o endpoint HTTP.\n' "$target" >&2
+    exit 1
+  fi
+else
+  install -D -m 0644 "$candidate" "$target"
+fi
+NODE
+
+  if ! harbor_forward_ready; then
+    # O backend é HTTP puro, então o Docker pode fazer fallback de HTTPS.
+    kubectl --context "$profile" -n harbor port-forward --address 127.0.0.1 \
+      svc/harbor 8081:80 > "$scratch/harbor-forward.log" 2>&1 &
+    harbor_forward_pid=$!
+    if ! poll 30 'túnel HTTP direto do Harbor na porta 8081' harbor_forward_ready; then
+      cat "$scratch/harbor-forward.log" >&2
+      die 'Confira se a porta 8081 está livre para o encaminhamento direto ao Harbor.'
+    fi
+  fi
+  printf 'Registry para Docker Desktop e Minikube: host.docker.internal:8081\n'
 }
 
 harbor_ready() {
@@ -618,6 +671,10 @@ elif "$serve"; then
   fi
   printf '\nNota: respostas 301 para HTTPS indicam redirecionamento na rota ou aplicacao.\n'
   printf 'Nota: Docker push HTTP no Harbor requer configuracao do registry no Docker.\n'
+  if [[ "$(docker info --format '{{.OperatingSystem}}')" == 'Docker Desktop' &&
+        "$(k get node "$profile" -o jsonpath='{.status.nodeInfo.containerRuntimeVersion}')" == containerd://* ]]; then
+    serve_local_harbor
+  fi
   printf 'Iniciando port-forward em loopback; encerre com Ctrl+C.\n'
   k -n traefik port-forward --address 127.0.0.1 svc/traefik 8443:443 8080:80
 else

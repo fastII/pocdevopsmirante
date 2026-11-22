@@ -33,4 +33,12 @@ O chart 1.19.4 usa banco e Redis internos e PVCs. O Trivy do Harbor está desabi
 3. Confirme DNS, acesso HTTPS e confiança no certificado a partir do runner que publica e do runtime do Minikube que puxa a imagem. Para projeto privado, configure uma credencial de pull no namespace `apps` e referencie-a nos values da POCAPP.
 4. Para diagnosticar `ImagePullBackOff`, confira os eventos do pod, a referência da imagem e as credenciais do registry.
 
-Para a interface no navegador, abra `kubectl --context minikube -n traefik port-forward svc/traefik 8443:443` e use `https://harbor.localhost:8443`. O push em modo `harbor` roda no runner `self-hosted`. Use `HARBOR_REGISTRY` com o endereço canônico do registry. O Docker do runner e o containerd do nó precisam resolver esse endereço e confiar no certificado. O endpoint de token anunciado pelo Harbor usa `externalURL`, atualmente `https://harbor.local`. Enquanto o endereço canônico estiver indisponível, use `minikube-local` para carregar o artefato diretamente no perfil. [CI/CD da POCAPP](../../README.md#configurar-o-cicd)
+Com `--servir` ativo, use `http://harbor.localhost:8080` ou `https://harbor.localhost:8443` no navegador.
+
+No Docker Desktop, use `host.docker.internal:8081` para o push e o pull da POC. Inclua esse endereço em `insecure-registries` no Docker Engine e use `HARBOR_REGISTRY=host.docker.internal:8081` e `HARBOR_PROJECT=poc` no GitHub. O provisionador mantém o encaminhamento direto ao Service `harbor` em loopback enquanto o Argo CD sincroniza. O containerd usa HTTP somente nesse endereço. Para diagnosticar o registry, o `401` abaixo deve vir acompanhado do endereço de token em `http://host.docker.internal:8081/service/token`.
+
+~~~bash
+curl --noproxy '*' -i -H 'Host: host.docker.internal:8081' http://127.0.0.1:8081/v2/
+~~~
+
+O projeto público libera pull anônimo. Configure `HARBOR_USERNAME` e `HARBOR_PASSWORD` para publicar com uma conta autorizada a escrever em `poc`. O workflow verifica o pull pelo Minikube após publicar em um projeto público local. [CI/CD da POCAPP](../../README.md#configurar-o-cicd)
