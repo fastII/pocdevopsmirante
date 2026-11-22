@@ -322,10 +322,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$POCAPP_IMAGE_DELIVERY" == harbor ]]; then
+          if [[ "$POCAPP_IMAGE_DELIVERY" == 'harbor' ]]; then
             : "${REGISTRY:?Configure HARBOR_REGISTRY como hostname[:porta].}"
             : "${PROJECT:?Configure HARBOR_PROJECT.}"
-            printf 'repository=%s/%s/healthz-api\n' "$REGISTRY" "$PROJECT" >> "$GITHUB_OUTPUT"
+            REGISTRY="${REGISTRY#http://}"
+            REGISTRY="${REGISTRY#https://}"
+            REGISTRY="${REGISTRY%/}"
+            PROJECT="${PROJECT#/}"
+            PROJECT="${PROJECT%/}"
+            if [[ "$REGISTRY" != 'harbor.localhost:8080' ]]; then
+              echo 'HARBOR_REGISTRY deve ser harbor.localhost:8080 para coincidir com o login.' >&2
+              exit 1
+            fi
+            REPOSITORY="${REGISTRY}/${PROJECT}/healthz-api"
+            printf 'repository=%s\n' "$REPOSITORY" >> "$GITHUB_OUTPUT"
+            echo "Repositório definido: $REPOSITORY"
           else
             printf 'repository=healthz-api\n' >> "$GITHUB_OUTPUT"
           fi
@@ -352,6 +363,14 @@ jobs:
             END { exit !found }
           '
 
+      - name: Carregar imagem Docker para publicar no Harbor
+        if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker load -i "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
+          docker image inspect "healthz-api:${TAG}" > /dev/null
+
       - name: Login no Harbor
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         uses: docker/login-action@v3
@@ -367,14 +386,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          IMAGE="$REPOSITORY:$TAG"
-
-          echo "Publicando imagem: $IMAGE"
-
-          docker load --input "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
-          docker tag "healthz-api:$TAG" "$IMAGE"
-          docker push "$IMAGE"
+          IMAGE="${REPOSITORY}:${TAG}"
+          echo "Imagem local: healthz-api:${TAG}"
+          echo "Publicando imagem: ${IMAGE}"
+          docker image inspect "healthz-api:${TAG}" > /dev/null
+          docker tag "healthz-api:${TAG}" "${IMAGE}"
+          docker push "${IMAGE}"
 
   # ============================================================
   # 4. GITOPS - ATUALIZAR HELM VALUES
