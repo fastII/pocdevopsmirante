@@ -289,23 +289,47 @@ O scanner e o Quality Gate usam o mesmo túnel em `http://127.0.0.1:<porta-dinâ
 - **Entrega local.** Em **Actions → POCAPP - CI & CD → Run workflow**, selecione `main`, `deploy_target: stable` e `image_delivery: minikube-local`. O runner carrega o artefato no perfil antes de publicar a tag no Git. Preserve o arquivo se precisar reconstruir o ambiente.
 - **Entrega via Harbor local.** No Docker Desktop, adicione `host.docker.internal:8081` a `insecure-registries` e mantenha `--servir` em execução na máquina do runner. Configure `HARBOR_REGISTRY=host.docker.internal:8081` e `HARBOR_PROJECT=poc`. O provisionador abre HTTP direto ao Harbor em `8081` e configura o containerd para esse endereço. A interface do Harbor usa o Traefik em `8080` ou `8443`. O projeto público permite pull anônimo e o push exige uma credencial com permissão de escrita. Para imagens privadas, configure `imagePullSecrets` no namespace `apps`. [Configuração do Harbor](infra/harbor/01-install-harbor.md#3-preparar-o-registry-para-a-aplicação)
 
-Um commit que altera apenas `helm/pocapp/values.yaml` é reconciliado pelo Argo CD sem disparar novo build. O workflow de rollback publica no Git uma tag já disponível. Durante um canary, os dois artefatos permanecem disponíveis até finalizar o fluxo. [Procedimento de rollback](evidence/Processorollback.md) · [Workflow de rollback](.github/workflows/rollback-pocapp.yaml)
+### Escolher os inputs do pipeline
+
+Em **Actions → POCAPP - CI & CD → Run workflow**, selecione a branch `main`. As duas opções do formulário são independentes.
+
+| Input | Opção | Efeito |
+| --- | --- | --- |
+| `deploy_target` | `stable` | Atualiza a imagem da versão estável em `image` |
+| `deploy_target` | `canary` | Registra a nova imagem em `canary.image`, inicia a candidata e mantém o peso em `0` |
+| `image_delivery` | `harbor` | Publica a imagem no repositório configurado e registra a referência no Git |
+| `image_delivery` | `minikube-local` | Carrega a imagem no nó do Minikube e registra a referência local no Git |
+
+O pipeline valida o código e o Helm chart, aguarda o Quality Gate, constrói e entrega a imagem e então executa **GitOps - Atualizar imagem no Helm**. O bump aparece em `main` quando esse último job publica o commit. O Argo CD então reconcilia a revisão. A tag segue o formato `sha-<12 primeiros caracteres do commit>`.
+
+Uma execução por push em `main` publica a versão estável por padrão, conforme os filtros do workflow. Para preparar a demonstração via formulário, use uma candidata com tag distinta da versão estável. O campo `version` do `/healthz` vem da tag definida no Deployment. Uma alteração apenas em `helm/pocapp/values.yaml` segue para o Argo CD sem disparar outro build. [Workflow de CI/CD](.github/workflows/pocapp-ci-cd.yaml)
 
 ### Canary com Traefik
 
-1. Faça o primeiro deploy com `canary.enabled: false`. Confirme a versão estável e a folga do nó. Se a imagem der `ImagePullBackOff`, confira a tag e a credencial de pull.
-2. Publique uma tag própria para a candidata e defina `canary.enabled: true` e `canary.weight: 0`. Use o workflow com `deploy_target: canary` ou ajuste `canary.image.repository` e `canary.image.tag`.
-3. Aguarde o rollout de `deployment/pocapp-canary`. Use `kubectl -n apps port-forward svc/pocapp-canary 3001:80` para consultar `http://127.0.0.1:3001/healthz`. A versão aparece no campo `version` quando a imagem inclui esse código.
-4. Avance para `canary.weight: 10`. Confirme `Accepted=True` e `ResolvedRefs=True` na rota e observe a distribuição e os erros antes de aumentar o peso. Os dois Services compartilham `healthz.localhost`. [Divisão de tráfego no Gateway API](https://gateway-api.sigs.k8s.io/guides/user-guides/traffic-splitting/)
-5. Para promover, encaminhe 100% para a candidata, copie seu repositório, tag e política de pull para `image` e aguarde a versão estável atualizar. Volte o peso para zero, confirme o Service estável e desabilite o canary. Para abortar, devolva o tráfego à estável e desabilite a candidata após validar. Se a estável já mudou, restaure a imagem anterior nela antes de devolver o tráfego.
+1. **Estabeleça a referência.** Comece com `canary.enabled: false`. Confirme a imagem estável e registre repositório, tag e política de pull. Preserve o artefato para o rollback.
+2. **Prepare a candidata.** Execute o workflow com `deploy_target=canary` e a entrega escolhida. Confira o commit `ci(pocapp): deploy canary image ...` em `main`. O chart cria Deployment e Service separados para a candidata e a rota continua com 100% na estável. Enquanto o canary está ativo, o job GitOps recusa outro deploy.
+3. **Valide com peso zero.** Aguarde o rollout de `deployment/pocapp-canary`. Em outro terminal, abra `kubectl --context minikube -n apps port-forward svc/pocapp-canary 3001:80` e confira a tag em `curl -fsS http://127.0.0.1:3001/healthz | jq -r '.version'`.
+4. **Demonstre o tráfego.** Publique `canary.weight: 10` em `helm/pocapp/values.yaml`, aguarde a reconciliação e confira os pesos e as condições `Accepted=True` e `ResolvedRefs=True` no `HTTPRoute`. A amostra abaixo deve mostrar as duas tags, com aproximadamente 90% das requisições na estável e 10% na candidata. [Divisão de tráfego no Gateway API](https://gateway-api.sigs.k8s.io/guides/user-guides/traffic-splitting/)
 
 ~~~bash
+kubectl --context minikube -n apps get httproute pocapp -o json |
+  jq '.spec.rules[].backendRefs, .status.parents[].conditions'
+
+set -o pipefail
 PORTA_HTTPS=8443
-for i in $(seq 1 40); do
+for i in $(seq 1 100); do
   curl -fkSs --noproxy '*' --resolve "healthz.localhost:$PORTA_HTTPS:127.0.0.1" \
-    "https://healthz.localhost:$PORTA_HTTPS/healthz" | jq -er '.version'
+    "https://healthz.localhost:$PORTA_HTTPS/healthz" | jq -er '.version' || exit 1
 done | sort | uniq -c
 ~~~
+
+Em um teste isolado no Minikube, o peso `10` produziu 90 respostas da estável e 10 da candidata em 100 requisições. As duas tags usavam o mesmo artefato para validar o roteamento. O teste também confirmou o aborto, a promoção e o retorno à tag estável pelo rollback.
+
+### Promover, abortar ou restaurar
+
+- **Promover a candidata.** Publique `canary.weight: 100` e valide a candidata pelo Traefik. Copie seu repositório, tag e política de pull efetiva para `image`, mantendo o peso em 100 durante o rollout da estável. Aguarde `deployment/pocapp` ficar pronto com a nova imagem. Publique peso zero, confira a resposta pela estável e publique `canary.enabled: false` para remover a candidata.
+- **Abortar durante o canary.** Se a estável ainda está com a imagem anterior, publique peso zero e confirme que ela voltou a receber todo o tráfego. Se a estável já mudou durante a promoção, restaure sua referência anterior e aguarde o rollout antes de devolver o tráfego. Desabilite o canary depois de validar a estável.
+- **Restaurar após finalizar o canary.** Em **Actions → Rollback POCAPP → Run workflow**, selecione `main` e informe `image_tag` da última versão saudável. Preencha `image_repository` se ela veio de outro repositório e selecione `image_pull_policy` se a política também mudou. Confirme a existência do artefato no Harbor ou no nó do Minikube antes de executar. Acompanhe o commit `rollback(pocapp): restore image ...` e a revisão no Argo CD. Após o rollout, aguarde até que requisições consecutivas pelo Traefik retornem a tag restaurada. [Procedimento de rollback](evidence/Processorollback.md) · [Workflow de rollback](.github/workflows/rollback-pocapp.yaml)
 
 ## Dificuldades
 

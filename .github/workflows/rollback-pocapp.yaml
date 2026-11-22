@@ -5,15 +5,29 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Tag da imagem no Harbor para restaurar"
+        description: "Tag da última imagem saudável"
         required: true
         type: string
+      image_repository:
+        description: "Repositório anterior da imagem, se diferente do atual"
+        required: false
+        type: string
+      image_pull_policy:
+        description: "Política da versão anterior"
+        type: choice
+        options:
+          - manter
+          - IfNotPresent
+          - Always
+          - Never
+        default: manter
 
 permissions:
   contents: write
 
 jobs:
   rollback:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: pocapp-gitops-main
@@ -35,19 +49,42 @@ jobs:
           chmod +x /tmp/yq
           sudo mv /tmp/yq /usr/local/bin/yq
 
-      - name: Atualizar tag da imagem
+      - name: Restaurar a referência da imagem estável
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
+          IMAGE_REPOSITORY: ${{ inputs.image_repository }}
+          IMAGE_PULL_POLICY: ${{ inputs.image_pull_policy }}
+        shell: bash
         run: |
-          if [[ "$(yq '.canary.enabled' helm/pocapp/values.yaml)" == true ]]; then
+          set -euo pipefail
+          values=helm/pocapp/values.yaml
+          if [[ "$(yq '.canary.enabled' "$values")" == true ]]; then
             echo 'Há um canary ativo. Encerre o canary pelo Git antes de restaurar a tag estável.' >&2
             exit 1
           fi
-          yq -i '.image.tag = strenv(IMAGE_TAG)' \
-            helm/pocapp/values.yaml
+          if [[ ! "$IMAGE_TAG" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+            echo 'Informe uma tag de imagem válida em image_tag.' >&2
+            exit 1
+          fi
+          if [[ -n "$IMAGE_REPOSITORY" ]]; then
+            if [[ ! "$IMAGE_REPOSITORY" =~ ^[a-z0-9][a-z0-9._-]*(:[0-9]{1,5})?(/[a-z0-9][a-z0-9._-]*)*$ ||
+                  ( "$IMAGE_REPOSITORY" == *:* && "$IMAGE_REPOSITORY" != */* ) ]]; then
+              echo 'Informe um repositório de imagem sem protocolo, tag ou digest em image_repository.' >&2
+              exit 1
+            fi
+          else
+            IMAGE_REPOSITORY=$(yq -er '.image.repository' "$values")
+          fi
+          case "$IMAGE_PULL_POLICY" in
+            manter) IMAGE_PULL_POLICY=$(yq -er '.image.pullPolicy' "$values") ;;
+            IfNotPresent|Always|Never) ;;
+            *) echo 'Política de pull inválida.' >&2; exit 1 ;;
+          esac
 
-          helm_version=$(yq '.image.tag' helm/pocapp/values.yaml)
-          echo "Versão selecionada: $helm_version"
+          yq -i '.image.repository = strenv(IMAGE_REPOSITORY) |
+            .image.tag = strenv(IMAGE_TAG) |
+            .image.pullPolicy = strenv(IMAGE_PULL_POLICY)' "$values"
+          printf 'Imagem estável selecionada: %s:%s (%s)\n' "$IMAGE_REPOSITORY" "$IMAGE_TAG" "$IMAGE_PULL_POLICY"
 
       - name: Commit e push
         env:

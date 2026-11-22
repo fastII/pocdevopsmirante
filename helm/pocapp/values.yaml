@@ -8,8 +8,8 @@ image:
 
 # Ative após validar a versão estável. weight é a porcentagem no HTTPRoute.
 canary:
-  enabled: false
-  weight: 0
+  enabled: true
+  weight: 10
   image:
     repository: ""
     tag: ""
