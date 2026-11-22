@@ -183,7 +183,7 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 ## 7. POCAPP
 
 <details>
-<summary>Ver 4 capturas</summary>
+<summary>Ver 5 capturas</summary>
 
 **19/11/2026 18:17:39** — Criação e estrutura inicial do chart `helm/pocapp`.
 
@@ -201,12 +201,16 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 
 ![Aplicação individual do AppProject pocapp. A captura registra uma configuração histórica; use o manifesto do repositório como referência.](capturas/07-pocapp-04-appproject-original.png)
 
+**22/11/2026 17:28:39** — Execução nº 49 concluída com sucesso da validação Node.js e Helm à atualização GitOps. [Execução no GitHub Actions](https://github.com/fastII/pocdevopsmirante/actions/runs/45063520671)
+
+![Execução nº 49 do pipeline com os cinco jobs em verde](capturas/07-pocapp-05-pipeline-sucesso.png)
+
 </details>
 
 ## 8. Observabilidade
 
 <details>
-<summary>Ver 3 capturas</summary>
+<summary>Ver 5 capturas</summary>
 
 **20/11/2026 21:23:16** — Criação do namespace `observability` e do Secret do Grafana com entrada oculta da senha.
 
@@ -220,12 +224,20 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 
 ![Criação da Application da rota do Grafana após registrar os componentes.](capturas/08-observabilidade-03-rota-grafana.png)
 
+**22/11/2026 16:38:41** — Grafana com as métricas de CPU e memória do namespace `observability`, coletadas pelo Prometheus.
+
+![Painel do Grafana com utilização de CPU e memória por pod](capturas/08-observabilidade-04-grafana-metricas.png)
+
+**22/11/2026 16:40:39** — Grafana consultando no Loki os logs do namespace `traefik`.
+
+![Painel do Grafana com a linha do tempo e os logs do Traefik no Loki](capturas/08-observabilidade-05-grafana-logs.png)
+
 </details>
 
 ## 9. Incidentes de provisionamento
 
 <details>
-<summary>Ver 4 capturas</summary>
+<summary>Ver 3 capturas</summary>
 
 **20/11/2026 17:32:53** — Tentativa de acessar a API e retomada do perfil Minikube existente.
 
@@ -238,10 +250,6 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 **21/11/2026 09:21:15** — Aumento do limite de CPU e checagem de prontidão do API Server durante o contorno.
 
 ![Aumento do limite de CPU e checagem de prontidão do API Server durante o contorno.](capturas/09-incidente-03-contorno-cpu.png)
-
-**21/11/2026 14:20:03** — Resumo da auditoria de CPU, memória e diferença entre a capacidade do Kubernetes e o teto do Docker.
-
-![Resumo da auditoria de CPU, memória e diferença entre a capacidade do Kubernetes e o teto do Docker.](capturas/09-incidente-04-diagnostico-recursos.png)
 
 </details>
 

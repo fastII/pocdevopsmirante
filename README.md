@@ -239,6 +239,15 @@ kubectl --context minikube -n observability describe httproute grafana
 
 Abra o Grafana e consulte `up` no Prometheus e `{namespace="argocd"}` no Loki. Para diagnosticar coleta, consulte os pods e os logs do Alloy. A rota do Grafana deve reportar `Accepted=True` e `ResolvedRefs=True`.
 
+<details>
+<summary>Ver métricas e logs no Grafana</summary>
+
+![Grafana com métricas do Prometheus para CPU e memória dos pods de observabilidade](evidence/capturas/08-observabilidade-04-grafana-metricas.png)
+
+![Grafana com logs do Traefik coletados no Loki](evidence/capturas/08-observabilidade-05-grafana-logs.png)
+
+</details>
+
 ## POCAPP e CI/CD
 
 ### Imagem e execução local
@@ -307,6 +316,14 @@ O print mostra `stable` selecionado. Para iniciar uma candidata pelo Harbor na d
 O pipeline valida o código e o Helm chart, aguarda o Quality Gate, constrói e entrega a imagem e então executa **GitOps - Atualizar imagem no Helm**. O bump aparece em `main` quando esse último job publica o commit. O Argo CD então reconcilia a revisão. A tag segue o formato `sha-<12 primeiros caracteres do commit>`.
 
 Uma execução por push em `main` publica a versão estável por padrão, conforme os filtros do workflow. Para preparar a demonstração via formulário, use uma candidata com tag distinta da versão estável. O campo `version` do `/healthz` vem da tag definida no Deployment. Uma alteração apenas em `helm/pocapp/values.yaml` segue para o Argo CD sem disparar outro build. [Workflow de CI/CD](.github/workflows/pocapp-ci-cd.yaml)
+
+### Resumo da execução
+
+Na aba **Summary** do GitHub Actions, o job **Resumo do pipeline** apresenta o resultado de cada etapa, a imagem entregue, o destino `stable` ou `canary` e o link para a revisão GitOps quando disponível. O resumo também é gerado quando uma etapa falha. A confirmação do deploy acontece no Argo CD.
+
+A captura mostra a execução nº 49 em que os cinco jobs de CI/CD concluíram com sucesso. [Execução no GitHub Actions](https://github.com/fastII/pocdevopsmirante/actions/runs/45063520671)
+
+![Pipeline da POCAPP com os jobs de validação, SonarQube, build, entrega e GitOps concluídos com sucesso](evidence/capturas/07-pocapp-05-pipeline-sucesso.png)
 
 ### Canary com Traefik
 

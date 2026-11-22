@@ -446,6 +446,9 @@ jobs:
       group: pocapp-gitops-main
       cancel-in-progress: false
 
+    outputs:
+      revision: ${{ steps.commit.outputs.revision }}
+
     permissions:
       contents: write
 
@@ -510,6 +513,7 @@ jobs:
           PY
 
       - name: Commit e push na main
+        id: commit
         env:
           TAG: ${{ needs.publish.outputs.tag }}
           DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}
@@ -525,12 +529,70 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "Imagem já configurada. Nenhuma alteração necessária."
-            exit 0
+          else
+            git commit -m "ci(pocapp): deploy $DEPLOY_TARGET image $TAG"
+            git push origin HEAD:main
+            echo "GitOps atualizado. O Argo CD realizará a sincronização automática."
           fi
 
-          git commit -m "ci(pocapp): deploy $DEPLOY_TARGET image $TAG"
+          printf 'revision=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-          git push origin HEAD:main
+  summary:
+    name: Resumo do pipeline
+    if: ${{ !cancelled() }}
+    needs: [validate, sonar, image, publish, gitops]
+    runs-on: ubuntu-latest
+    permissions: {}
 
-          echo "GitOps atualizado."
-          echo "Argo CD realizará a sincronização automática."
+    steps:
+      - name: Registrar resultado da execução
+        env:
+          DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          SONAR_RESULT: ${{ needs.sonar.result }}
+          IMAGE_RESULT: ${{ needs.image.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          GITOPS_RESULT: ${{ needs.gitops.result }}
+          IMAGE_TAG: ${{ needs.image.outputs.tag }}
+          IMAGE_REPOSITORY: ${{ needs.publish.outputs.repository }}
+          GITOPS_REVISION: ${{ needs.gitops.outputs.revision }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          status_label() {
+            case "$1" in
+              success)   printf '✅ Sucesso' ;;
+              failure)   printf '❌ Falhou' ;;
+              cancelled) printf '⏹️ Cancelado' ;;
+              skipped)   printf '⏭️ Ignorado' ;;
+              *)         printf '—' ;;
+            esac
+          }
+
+          {
+            printf '## CI/CD da POCAPP\n\n'
+            printf -- '- Branch `%s` e revisão de origem `%s`\n' "$GITHUB_REF_NAME" "${GITHUB_SHA:0:12}"
+            printf -- '- Destino `%s`, entrega `%s`, plataforma `%s`\n' \
+              "$DEPLOY_TARGET" "$POCAPP_IMAGE_DELIVERY" "$POCAPP_IMAGE_PLATFORM"
+            if [[ "$PUBLISH_RESULT" == success && -n "$IMAGE_REPOSITORY" && -n "$IMAGE_TAG" ]]; then
+              printf -- '- Imagem entregue `%s:%s`\n' "$IMAGE_REPOSITORY" "$IMAGE_TAG"
+            elif [[ "$IMAGE_RESULT" == success && -n "$IMAGE_TAG" ]]; then
+              printf -- '- Tag gerada no build `%s`\n' "$IMAGE_TAG"
+            fi
+            if [[ "$GITOPS_RESULT" == success && -n "$GITOPS_REVISION" ]]; then
+              printf -- '- Revisão GitOps [`%s`](%s/%s/commit/%s)\n' \
+                "${GITOPS_REVISION:0:12}" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITOPS_REVISION"
+            fi
+
+            printf '\n| Etapa | Resultado |\n| --- | --- |\n'
+            printf '| Node.js e Helm | %s |\n' "$(status_label "$VALIDATE_RESULT")"
+            printf '| SonarQube e Quality Gate | %s |\n' "$(status_label "$SONAR_RESULT")"
+            printf '| Docker build e relatório Trivy | %s |\n' "$(status_label "$IMAGE_RESULT")"
+            printf '| Entrega da imagem | %s |\n' "$(status_label "$PUBLISH_RESULT")"
+            printf '| Atualização GitOps | %s |\n' "$(status_label "$GITOPS_RESULT")"
+
+            if [[ "$GITOPS_RESULT" == success ]]; then
+              printf '\nConfira a sincronização e a saúde da POCAPP no Argo CD para validar o deploy.\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
