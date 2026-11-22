@@ -21,8 +21,8 @@ jobs:
   # ============================================================
   validate:
     name: Node.js + Helm lint
-    runs-on: arc-minikube
-    #runs-on: ubuntu-latest
+    #runs-on: arc-minikube
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -236,7 +236,7 @@ jobs:
 
     if: github.ref == 'refs/heads/main'
 
-    runs-on: arc-minikube
+    runs-on: ubuntu-latest
 
     permissions:
       contents: write
