@@ -382,24 +382,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ steps.reference.outputs.registry }}" != 'host.docker.internal:8080' ]]; then
-            echo 'Esta POC usa o túnel HTTP host.docker.internal:8080; ajuste HARBOR_REGISTRY.' >&2
+          if [[ "${{ steps.reference.outputs.registry }}" != 'host.docker.internal:8081' ]]; then
+            echo 'Esta POC usa o túnel HTTP host.docker.internal:8081; ajuste HARBOR_REGISTRY.' >&2
             exit 1
           fi
-          # Não reutilizar 8080 ocupado por Traefik: TLS nessa porta causava 404 no push.
-          if lsof -nP -iTCP:8080 -sTCP:LISTEN | grep -q LISTEN; then
-            echo 'Porta 8080 ocupada. Encerre o port-forward antigo do Traefik uma única vez no Mac.' >&2
+          # Usar 8081 exclusivamente para Harbor; manter 8080/8443 do Traefik intactos.
+          if lsof -nP -iTCP:8081 -sTCP:LISTEN | grep -q LISTEN; then
+            echo 'Porta 8081 ocupada; não interrompa o port-forward existente.' >&2
             exit 1
           fi
           log="$RUNNER_TEMP/harbor-port-forward-$GITHUB_RUN_ID.log"
           kubectl --context minikube -n harbor port-forward --address 0.0.0.0 \
-            svc/harbor 8080:80 > "$log" 2>&1 &
+            svc/harbor 8081:80 > "$log" 2>&1 &
           pid=$!
           echo "HARBOR_FORWARD_PID=$pid" >> "$GITHUB_ENV"
           for i in {1..30}; do
             if ! kill -0 "$pid" 2>/dev/null; then cat "$log"; exit 1; fi
             code=$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' \
-              -H 'Host: host.docker.internal:8080' http://127.0.0.1:8080/v2/ || true)
+              -H 'Host: host.docker.internal:8080' http://127.0.0.1:8081/v2/ || true)
             if [[ "$code" == 401 ]]; then
               echo 'Harbor HTTP acessível via túnel direto.'
               exit 0
@@ -407,7 +407,7 @@ jobs:
             sleep 1
           done
           cat "$log" >&2
-          echo 'Harbor não respondeu HTTP 401 na porta 8080.' >&2
+          echo 'Harbor não respondeu HTTP 401 na porta 8081.' >&2
           exit 1
 
       - name: Login no Harbor
