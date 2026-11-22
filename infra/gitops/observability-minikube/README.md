@@ -1,6 +1,6 @@
 # Observabilidade no Minikube
 
-O script de provisionamento instala Grafana, Prometheus, Alertmanager, Loki e Alloy. As Applications `obs-*` têm bootstrap próprio e usam os values da branch `main`. [Runbook de provisionamento](../../../RUNBOOK.md#provisionamento-pelo-script)
+O script de provisionamento instala Grafana, Prometheus, Alertmanager, Loki e Alloy. As Applications `obs-*` têm bootstrap próprio e usam os values da branch `main`. [Provisionamento pelo script](../../../README.md#provisionamento-pelo-script)
 
 Apenas o Grafana recebe HTTPRoute **dentro da observabilidade**. Prometheus, Alertmanager e Loki são acessados internamente. O Alloy coleta logs dos pods e envia ao Loki.
 

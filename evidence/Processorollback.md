@@ -1,13 +1,13 @@
 # Rollback da POCAPP
 
-[Voltar ao runbook](../RUNBOOK.md)
+[Voltar ao README](../README.md)
 
 O workflow manual Rollback POCAPP troca apenas a chave image.tag de helm/pocapp/values.yaml e publica um commit em main. O Git armazena o estado desejado e o Argo CD renderiza e aplica o chart. [Workflow de rollback](../.github/workflows/rollback-pocapp.yaml)
 
 | Cenário | Procedimento |
 | --- | --- |
 | Restaurar uma imagem do mesmo repositório Harbor | Executar o workflow manual com a tag anterior |
-| Interromper um canary ativo | Restaurar o tráfego para a versão estável pelo Git e desabilitar o canary depois da validação. [Abortar o canary](../app/Runbookapp.md#5-canary-com-traefik) |
+| Interromper um canary ativo | Restaurar o tráfego para a versão estável pelo Git e desabilitar o canary depois da validação. [Canary com Traefik](../README.md#canary-com-traefik) |
 | Restaurar outros values, templates ou o repositório da imagem | Reverter a mudança em Git, por PR, e acompanhar o sync |
 | Recuperar temporariamente pelo histórico do Argo CD | Desabilitar auto-sync de forma coordenada, selecionar a revisão e registrar no Git o estado que deve permanecer |
 

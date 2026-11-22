@@ -1,6 +1,6 @@
 # Configurar a GitHub App do ARC
 
-[Voltar ao runbook](../../../RUNBOOK.md)
+[Voltar ao README](../../../README.md)
 
 O ARC Controller gerencia os runners. O listener recebe jobs por uma conexão de saída com o GitHub e cria runners sob demanda com Docker-in-Docker (DinD).
 

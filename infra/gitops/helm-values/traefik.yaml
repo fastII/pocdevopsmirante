@@ -49,19 +49,14 @@ metrics:
     enabled: true
 
 ports:
+  # A rota HTTP local do SonarQube usa este listener sem redirecionamento.
   web:
-    http:
-      redirections:
-        entryPoint:
-          permanent: true
-          scheme: https
-          to: websecure
-    nodePort: 30000
     port: 80
+    nodePort: 30000
 
   websecure:
-    nodePort: 30001
     port: 443
+    nodePort: 30001
 
 providers:
   # ADICIONADO: configura o provider Kubernetes CRD

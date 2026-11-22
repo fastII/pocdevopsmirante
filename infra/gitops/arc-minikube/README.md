@@ -1,8 +1,8 @@
 # ARC via Argo CD — Minikube sem External Secrets
 
-[Voltar ao runbook](../../../RUNBOOK.md) · [Configurar a GitHub App](01-install-arc-github.md)
+[Voltar ao README](../../../README.md) · [Configurar a GitHub App](01-install-arc-github.md)
 
-O script instala o ARC após a plataforma quando executado com `--com-arc`. Use os passos abaixo para instalar o ARC separadamente. [Provisionamento pelo script](../../../RUNBOOK.md#provisionamento-pelo-script)
+O script instala o ARC após a plataforma quando executado com `--com-arc`. Use os passos abaixo para instalar o ARC separadamente. [Provisionamento pelo script](../../../README.md#provisionamento-pelo-script)
 
 ## 1. Preparar o repositório OCI
 

@@ -1,6 +1,18 @@
 configs:
   params:
     server.insecure: true
+  cm:
+    # O chart do Harbor gera chaves e hashes novos a cada renderização.
+    # RespectIgnoreDifferences mantém os valores já instalados durante o sync.
+    resource.customizations.ignoreDifferences._Secret: |
+      jqPathExpressions:
+        - select(.metadata.namespace == "harbor" and .metadata.name == "harbor-core") | .data | (.secret, .CSRF_KEY, ."tls.crt", ."tls.key")
+        - select(.metadata.namespace == "harbor" and .metadata.name == "harbor-jobservice") | .data.JOBSERVICE_SECRET
+        - select(.metadata.namespace == "harbor" and .metadata.name == "harbor-registry") | .data.REGISTRY_HTTP_SECRET
+        - select(.metadata.namespace == "harbor" and .metadata.name == "harbor-registry-htpasswd") | .data.REGISTRY_HTPASSWD
+    resource.customizations.ignoreDifferences.apps_Deployment: |
+      jqPathExpressions:
+        - select(.metadata.namespace == "harbor" and (.metadata.name | IN("harbor-core", "harbor-jobservice", "harbor-registry"))) | .spec.template.metadata.annotations | (."checksum/secret", ."checksum/secret-core", ."checksum/secret-jobservice")
 
 server:
   service:
@@ -25,6 +37,11 @@ controller:
       memory: 1Gi
 
 repoServer:
+  readinessProbe:
+    timeoutSeconds: 5
+  livenessProbe:
+    timeoutSeconds: 5
+    failureThreshold: 5
   resources:
     requests:
       cpu: 100m

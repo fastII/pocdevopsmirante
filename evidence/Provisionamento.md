@@ -1,6 +1,6 @@
 # Evidências do provisionamento original
 
-[Voltar ao runbook](../RUNBOOK.md)
+[Voltar ao README](../README.md)
 
 As capturas registram o provisionamento original entre 19 e 21 de novembro de 2026. As etapas iniciais foram feitas por componente, com Helm e Applications individuais. O `platform-root` aparece no inventário posterior, e o script do runbook descreve o fluxo de reprodução da POC.
 

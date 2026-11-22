@@ -1,6 +1,6 @@
 # Criar o certificado TLS local
 
-[Voltar ao runbook](../../RUNBOOK.md)
+[Voltar ao README](../../README.md)
 
 Use um diretório fora do repositório para guardar o certificado e a chave. O SAN cobre os hosts `.localhost` e `.local` usados nas rotas.
 

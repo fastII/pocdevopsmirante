@@ -1,6 +1,6 @@
 # Instalar SonarQube Community
 
-[Voltar ao runbook](../../RUNBOOK.md)
+[Voltar ao README](../../README.md)
 
 ## 1. Preparar o Secret de monitoramento
 
@@ -17,10 +17,9 @@ unset SONAR_MONITORING_PASSCODE
 
 ## 2. Sincronizar e validar
 
-Após o `platform-root` criar a Application `sonarqube`, faça o sync manual da filha se o provisionamento foi iniciado sem o script.
+Após o `platform-root` criar a Application `sonarqube`, aguarde o sync automático.
 
 ~~~bash
-argocd app sync sonarqube
 argocd app wait sonarqube --sync --health --timeout 600
 kubectl -n sonarqube get pods,pvc,svc
 ~~~
@@ -29,4 +28,4 @@ O chart `2026.5.1005` usa banco embutido nesta configuração da POC. Para usar 
 
 ## 3. Conectar ao pipeline
 
-Após sincronizar `platform-routes`, acesse a interface, configure o projeto `pocapp` e gere um token de análise para `SONAR_TOKEN`. Com o runner instalado na mesma máquina do Minikube, omita `SONAR_HOST_URL` para o workflow abrir o port-forward automaticamente. Para um SonarQube remoto, configure uma URL alcançável pelo runner, com DNS e TLS válidos. [Workflow de CI/CD](../../.github/workflows/pocapp-ci-cd.yaml)
+Após sincronizar `platform-routes`, acesse `http://sonarqube.localhost:8080` com o provisionador em `--servir`, configure o projeto `pocapp` e gere o token de análise para `SONAR_TOKEN`. Com o runner na máquina do Minikube, deixe `SONAR_HOST_URL` vazia para o scanner e o Quality Gate usarem um túnel HTTP próprio em loopback. O workflow também usa esse túnel quando recebe a URL antiga `https://sonarqube.localhost:8443`. Para um SonarQube remoto, configure uma URL acessível ao runner com DNS e TLS válidos. [Workflow de CI/CD](../../.github/workflows/pocapp-ci-cd.yaml)

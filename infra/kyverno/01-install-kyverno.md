@@ -1,6 +1,6 @@
 # Instalar Kyverno via Argo CD
 
-[Voltar ao runbook](../../RUNBOOK.md)
+[Voltar ao README](../../README.md)
 
 ## 1. Instalar os controladores
 
@@ -17,11 +17,13 @@ Os resources ficam em helm.valuesObject. O admission controller usa 100m / 160Mi
 
 ## 2. Sincronizar a política em Audit
 
-Confirme que ValidatingPolicy está disponível após a instalação dos controladores. A política audita imagens sem tag explícita ou com :latest em pods de apps, incluindo init e ephemeral containers. [Política versionada](../security/kyverno/disallow-latest.yaml)
+Confirme que `ValidatingPolicy v1` está disponível após a instalação dos controladores. A política audita imagens sem tag explícita ou com `:latest` em pods de `apps`, incluindo init e ephemeral containers. Se o autosync anterior falhou por falta da API, solicite um novo sync depois da descoberta. [Política versionada](../security/kyverno/disallow-latest.yaml)
 
 ~~~bash
-kubectl api-resources --api-group=policies.kyverno.io
+kubectl wait --for=condition=Established crd/validatingpolicies.policies.kyverno.io --timeout=120s
+kubectl get --raw /apis/policies.kyverno.io/v1
 argocd app diff kyverno-policies
+# Repetir apenas se a tentativa anterior falhou por falta da API.
 argocd app sync kyverno-policies
 argocd app wait kyverno-policies --sync --health --timeout 180
 kubectl get validatingpolicies.policies.kyverno.io
