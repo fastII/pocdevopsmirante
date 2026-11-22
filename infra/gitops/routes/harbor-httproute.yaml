@@ -4,6 +4,10 @@ metadata:
   name: harbor
   namespace: harbor
 spec:
+  hostnames:
+    - harbor.local
+    - harbor.localhost
+    - host.docker.internal
   parentRefs:
     - name: traefik-gateway
       namespace: traefik
@@ -11,9 +15,6 @@ spec:
     - name: traefik-gateway
       namespace: traefik
       sectionName: websecure
-  hostnames:
-    - harbor.local
-    - harbor.localhost
   rules:
     - matches:
         - path:
