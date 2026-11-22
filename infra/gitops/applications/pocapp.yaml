@@ -16,7 +16,10 @@ spec:
     namespace: apps
   syncPolicy:
     automated:
-      prune: false # Evita exclusões automáticas nesta POC
+      prune: true
       selfHeal: true
+      allowEmpty: false
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
