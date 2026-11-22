@@ -66,7 +66,8 @@ OPCOES
   --sem-observabilidade Nao provisiona Prometheus, Loki, Alloy e Grafana.
   --com-arc             Ativa o Actions Runner Controller (opcional).
   --sem-arc             Desativa ARC (comportamento padrao).
-  --servir              Abre port-forward local do Traefik em HTTP 8080 e HTTPS 8443.
+  --servir              Abre HTTP 8080 para SonarQube, Harbor e Grafana via Traefik,
+                        e HTTPS 8443 para as rotas configuradas.
                         O terminal fica ocupado ate Ctrl+C.
   --acesso-corporativo  Abre o acesso pelo 'minikube service traefik --url'.
                         Usa portas locais dinamicas, sem editar /etc/hosts.
@@ -76,7 +77,7 @@ EXEMPLOS
   # Provisionamento padrao: observabilidade ligada, ARC desligado
   bash scripts/provision-minikube.sh
 
-  # Provisionar e abrir HTTPS local (ex.: https://argocd.localhost:8443)
+  # Provisionar e abrir HTTP 8080 e HTTPS 8443 para os servicos
   bash scripts/provision-minikube.sh --servir
 
   # Restaurar credenciais do backup e abrir o acesso HTTPS
@@ -113,6 +114,9 @@ OBSERVACOES
   - O pipeline CI/CD e responsavel por build, scan, push e atualizacao da tag.
   - --restaurar-secrets restaura somente Secrets, nao dados persistentes.
   - As URLs *.localhost dependem dos hostnames configurados nas HTTPRoutes.
+  - A porta 8080 e compartilhada pelo Traefik: cada hostname escolhe o backend.
+  - As rotas HTTP precisam estar aceitas no listener HTTP, sem redirect HTTPS.
+  - Harbor HTTP como registry Docker exige configuracao adicional no daemon.
 HELP
 }
 
@@ -596,9 +600,31 @@ if "$corporate_access"; then
   printf "Exemplo: curl -i -H 'Host: sonarqube.localhost' http://127.0.0.1:PORTA_HTTP/api/server/version\n"
   m service traefik -n traefik --url
 elif "$serve"; then
-  printf 'Argo CD em https://argocd.localhost:8443 e SonarQube em http://sonarqube.localhost:8080.\n'
-  k -n traefik port-forward --address localhost svc/traefik 8443:443 8080:80
+  # Um unico port-forward HTTP atende todas as HTTPRoutes por hostname.
+  # Nao sao necessarios forwards separados para Harbor, SonarQube e Grafana.
+  # Os manifestos HTTPRoute devem permitir o listener HTTP do Gateway.
+  printf '\nAcessos locais via Traefik (HTTP):\n'
+  printf '  SonarQube: http://sonarqube.localhost:8080\n'
+  printf '  Harbor:    http://harbor.localhost:8080\n'
+  if "$observability"; then
+    printf '  Grafana:   http://grafana.localhost:8080\n'
+  fi
+  printf '\nHTTPS (mantido): https://argocd.localhost:8443\n'
+  printf '\nTestes em outro terminal:\n'
+  printf '  curl -i http://sonarqube.localhost:8080/api/system/status\n'
+  printf '  curl -i http://harbor.localhost:8080/v2/\n'
+  if "$observability"; then
+    printf '  curl -I http://grafana.localhost:8080/login\n'
+  fi
+  printf '\nNota: respostas 301 para HTTPS indicam redirecionamento na rota ou aplicacao.\n'
+  printf 'Nota: Docker push HTTP no Harbor requer configuracao do registry no Docker.\n'
+  printf 'Iniciando port-forward em loopback; encerre com Ctrl+C.\n'
+  k -n traefik port-forward --address 127.0.0.1 svc/traefik 8443:443 8080:80
 else
-  printf 'Portas locais: kubectl --context minikube -n traefik port-forward --address localhost svc/traefik 8443:443 8080:80\n'
+  printf 'Acesso local HTTP (8080): sonarqube.localhost, harbor.localhost'
+  if "$observability"; then printf ', grafana.localhost'; fi
+  printf '\nAcesso HTTPS (8443): argocd.localhost e demais rotas HTTPS.\n'
+  printf 'Para abrir os acessos: bash scripts/provision-minikube.sh --servir\n'
+  printf 'Ou execute: kubectl --context minikube -n traefik port-forward --address 127.0.0.1 svc/traefik 8443:443 8080:80\n'
   printf 'Alternativa: minikube -p minikube service traefik -n traefik --url\n'
 fi

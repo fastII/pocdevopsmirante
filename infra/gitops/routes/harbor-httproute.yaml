@@ -5,17 +5,20 @@ metadata:
   namespace: harbor
 spec:
   parentRefs:
-  - name: traefik-gateway
-    namespace: traefik
-    sectionName: websecure
+    - name: traefik-gateway
+      namespace: traefik
+      sectionName: web
+    - name: traefik-gateway
+      namespace: traefik
+      sectionName: websecure
   hostnames:
-  - harbor.local
-  - harbor.localhost # ADICIONADO
+    - harbor.local
+    - harbor.localhost
   rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /
-    backendRefs:
-    - name: harbor
-      port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: harbor
+          port: 80
