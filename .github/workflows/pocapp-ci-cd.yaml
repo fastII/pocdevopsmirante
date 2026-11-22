@@ -377,6 +377,39 @@ jobs:
           docker load -i "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
           docker image inspect "healthz-api:${TAG}" > /dev/null
 
+      - name: Iniciar túnel HTTP direto para Harbor
+        if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.reference.outputs.registry }}" != 'host.docker.internal:8080' ]]; then
+            echo 'Esta POC usa o túnel HTTP host.docker.internal:8080; ajuste HARBOR_REGISTRY.' >&2
+            exit 1
+          fi
+          # Não reutilizar 8080 ocupado por Traefik: TLS nessa porta causava 404 no push.
+          if lsof -nP -iTCP:8080 -sTCP:LISTEN | grep -q LISTEN; then
+            echo 'Porta 8080 ocupada. Encerre o port-forward antigo do Traefik uma única vez no Mac.' >&2
+            exit 1
+          fi
+          log="$RUNNER_TEMP/harbor-port-forward-$GITHUB_RUN_ID.log"
+          kubectl --context minikube -n harbor port-forward --address 0.0.0.0 \
+            svc/harbor 8080:80 > "$log" 2>&1 &
+          pid=$!
+          echo "HARBOR_FORWARD_PID=$pid" >> "$GITHUB_ENV"
+          for i in {1..30}; do
+            if ! kill -0 "$pid" 2>/dev/null; then cat "$log"; exit 1; fi
+            code=$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' \
+              -H 'Host: host.docker.internal:8080' http://127.0.0.1:8080/v2/ || true)
+            if [[ "$code" == 401 ]]; then
+              echo 'Harbor HTTP acessível via túnel direto.'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          echo 'Harbor não respondeu HTTP 401 na porta 8080.' >&2
+          exit 1
+
       - name: Login no Harbor
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         uses: docker/login-action@v3
@@ -398,6 +431,14 @@ jobs:
           docker image inspect "healthz-api:${TAG}" > /dev/null
           docker tag "healthz-api:${TAG}" "${IMAGE}"
           docker push "${IMAGE}"
+
+      - name: Encerrar túnel HTTP do Harbor
+        if: always() && env.POCAPP_IMAGE_DELIVERY == 'harbor'
+        shell: bash
+        run: |
+          if [[ -n "${HARBOR_FORWARD_PID:-}" ]]; then
+            kill "$HARBOR_FORWARD_PID" 2>/dev/null || true
+          fi
 
   # ============================================================
   # 4. GITOPS - ATUALIZAR HELM VALUES
