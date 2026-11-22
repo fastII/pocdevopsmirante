@@ -2,6 +2,8 @@
 
 [Voltar ao runbook](../RUNBOOK.md)
 
+[Capturas de diagnóstico e contorno](Provisionamento.md#9-incidentes-de-provisionamento)
+
 ## 1. Gateway API e acesso no macOS
 
 A instalação do Traefik precisou dos CRDs da Gateway API. Na recuperação inicial foi usado o bundle Experimental 1.4.1. O provider atual usa o canal Standard. O túnel do Minikube tentou abrir as portas 80 e 443 com sudo, indisponível no Mac corporativo. A saída foi manter aberto o encaminhamento criado por minikube service e usar a porta HTTPS informada. [Traefik e Gateway API](../infra/traefik/01-install-traefik.md)
