@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: host.docker.internal:8081/poc/healthz-api
   pullPolicy: IfNotPresent
-  tag: "sha-bab7b74eadff"
+  tag: "sha-029e3c37ed17"
 
 # O chart calcula o peso da estável como 100 - 10.
 canary:
