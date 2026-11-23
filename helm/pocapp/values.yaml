@@ -7,7 +7,7 @@ image:
 
 # O chart calcula o peso da estável como 100 - 10.
 canary:
-  enabled: true
+  enabled: false
   weight: 0
   image:
     repository: "host.docker.internal:8081/poc/healthz-api"
