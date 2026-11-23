@@ -54,6 +54,34 @@ jobs:
         with:
           node-version: '22'
 
+      # Habilita Yarn Classic no runner Ubuntu, sem depender de instalação global.
+      - name: Preparar Yarn
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn --version
+
+      # Instala as dependências declaradas em app/package.json.
+      # O yarn.lock deve estar versionado para builds reproduzíveis.
+      - name: Instalar dependências com Yarn
+        working-directory: app
+        run: yarn install --frozen-lockfile
+
+      # Executa os testes Vitest e gera app/coverage/lcov.info.
+      - name: Testes automatizados e cobertura
+        working-directory: app
+        run: yarn test:coverage
+
+      # Disponibiliza a cobertura ao job SonarQube, que roda em outro runner.
+      - name: Publicar relatório de cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocapp-coverage
+          path: app/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Instalar Helm
         uses: azure/setup-helm@v4
         with:
@@ -191,6 +219,13 @@ jobs:
           echo 'O SonarQube ainda não está acessível no contexto minikube.' >&2
           exit 1
 
+      # Recupera a cobertura gerada no job validate (runner Ubuntu).
+      - name: Baixar relatório de cobertura
+        uses: actions/download-artifact@v4
+        with:
+          name: pocapp-coverage
+          path: app/coverage
+
       - name: Analisar código no SonarQube
         uses: SonarSource/sonarqube-scan-action@v6.0.0
         with:
@@ -199,6 +234,7 @@ jobs:
             -Dsonar.projectKey=pocapp
             -Dsonar.projectName=pocapp
             -Dsonar.sources=src
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
