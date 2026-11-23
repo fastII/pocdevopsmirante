@@ -36,6 +36,13 @@ flowchart TD
     K8S -. runners opcionais .-> ARC[Actions Runner Controller]
 ~~~
 
+<details>
+<summary>Ver a configuração do diagrama em Mermaid</summary>
+
+![Código Mermaid que descreve o fluxo do GitHub Actions ao Argo CD e aos serviços no Minikube](evidence/capturas/arquitetura-mermaid.png)
+
+</details>
+
 | Componente | Papel |
 | --- | --- |
 | Minikube e Docker | Kubernetes local de nó único. Perfis novos usam o driver Docker com runtime containerd |
@@ -114,6 +121,31 @@ O certificado HTTPS do laboratório é autoassinado. Se precisar de portas dinâ
 ~~~bash
 kubectl --context minikube -n traefik port-forward --address localhost svc/traefik 8443:443 8080:80
 ~~~
+
+Na execução registrada abaixo, usei `--restaurar-secrets --servir` com um perfil Minikube que já existia. Quando o terminal mostrou **Provisionamento concluído**, o script deixou os encaminhamentos abertos para acessar os serviços.
+
+<details>
+<summary>Ver a execução do script e os pods no K9s</summary>
+
+O script conferiu a revisão no GitHub e preparou o Minikube com o Metrics Server.
+
+![Terminal com o início do provisionamento, a revisão do Git e a preparação do Minikube](evidence/capturas/01-minikube-05-provisionamento-inicio.png)
+
+Em seguida, atualizou a instalação do Argo CD e preparou a Gateway API. O terminal mostra o reaproveitamento dos namespaces e o início da restauração dos Secrets.
+
+![Atualização do Argo CD por Helm e espera pelo repo-server](evidence/capturas/01-minikube-06-provisionamento-argocd.png)
+
+![Aplicação dos CRDs da Gateway API e início da restauração dos Secrets](evidence/capturas/01-minikube-07-provisionamento-gateway-api.png)
+
+Ao final, o script listou os volumes e as rotas e anunciou os endereços locais.
+
+![Provisionamento concluído, Gateway programado e encaminhamentos HTTP e HTTPS ativos](evidence/capturas/01-minikube-08-provisionamento-concluido.png)
+
+No K9s, abri a lista de pods por namespace. A captura mostra a POCAPP estável e a candidata em `Running`, junto com pods do Argo CD, Harbor, Kyverno e da observabilidade.
+
+![K9s com os pods da POCAPP estável, da candidata e dos serviços da plataforma](evidence/capturas/01-minikube-09-pods-k9s.png)
+
+</details>
 
 ## Instalação manual
 
@@ -246,6 +278,25 @@ Para uma primeira checagem no Grafana, consulte `up` no Prometheus e `{namespace
 
 </details>
 
+### Alerta da POCAPP no Grafana
+
+Criei a regra **POCAPP sem réplicas disponíveis** no grupo `pocapp` da pasta **POCAPP**. A cada minuto, o Grafana consulta o Prometheus para contar as réplicas disponíveis do Deployment `pocapp` no namespace `apps`. Se o valor ficar abaixo de uma réplica por dois minutos, a regra dispara e encaminha o alerta ao contact point `alertmanager-minikube`.
+
+<details>
+<summary>Ver a criação e o estado da regra de alerta</summary>
+
+A pasta **POCAPP** reúne as regras da aplicação. Usei o UID dessa pasta para enviar a regra em JSON pela API de Alerting do Grafana.
+
+![Pasta POCAPP e suas permissões no Grafana](evidence/capturas/08-observabilidade-06-pasta-pocapp-grafana.png)
+
+![Terminal com a resposta HTTP 201 Created à criação da regra pela API do Grafana](evidence/capturas/08-observabilidade-07-criacao-alerta-api.png)
+
+Em **Alerting → Alert rules**, a regra apareceu como **Normal**, com a avaliação saudável no momento da captura.
+
+![Regra POCAPP sem réplicas disponíveis em estado Normal, avaliada a cada minuto](evidence/capturas/08-observabilidade-08-regra-alerta-grafana.png)
+
+</details>
+
 ## POCAPP e CI/CD
 
 ### Imagem e execução local
@@ -295,6 +346,36 @@ Na configuração local padrão, o scanner e o Quality Gate usam o mesmo túnel 
 
 - **Entrega local.** Em **Actions → POCAPP - CI & CD → Run workflow**, selecione `main`, `deploy_target: stable` e `image_delivery: minikube-local`. O runner carrega o artefato no perfil antes de publicar a tag no Git. Preserve o arquivo se precisar reconstruir o ambiente.
 - **Entrega via Harbor local.** No Docker Desktop, adicione `host.docker.internal:8081` a `insecure-registries` e mantenha `--servir` em execução na máquina do runner. Configure `HARBOR_REGISTRY=host.docker.internal:8081` e `HARBOR_PROJECT=poc`. O provisionador abre HTTP direto ao Harbor em `8081` e configura o containerd para esse endereço. A interface do Harbor usa o Traefik em `8080` ou `8443`. O projeto público permite pull anônimo e o push exige uma credencial com permissão de escrita. Para imagens privadas, configure `imagePullSecrets` no namespace `apps`. [Configuração do Harbor](infra/harbor/01-install-harbor.md#3-preparar-o-registry-para-a-aplicação)
+
+### Testes com Yarn e cobertura no SonarQube
+
+No pipeline, o job de validação ativa o Yarn Classic `1.22.22` com Corepack e roda `yarn install --frozen-lockfile` e `yarn test:coverage` na pasta `app`. O Vitest mede a cobertura com o V8 e exige pelo menos 80% em linhas, funções, ramificações e instruções. O job publica `app/coverage/lcov.info` no artefato `pocapp-coverage`. O job de análise baixa esse artefato, envia a cobertura ao SonarQube e aguarda o Quality Gate. [Configuração do Vitest](app/vitest.config.js) · [Workflow da POCAPP](.github/workflows/pocapp-ci-cd.yaml)
+
+<details>
+<summary>Ver as capturas da configuração e do resultado dos testes</summary>
+
+O exemplo da SonarSource mostra como gerar o LCOV com Yarn e Jest. Na POCAPP, usei o mesmo formato de relatório com Vitest.
+
+![Documentação da SonarSource com exemplo de testes pelo Yarn e leitura do arquivo LCOV](evidence/capturas/07-pocapp-07-referencia-yarn-sonarqube.png)
+
+As capturas seguintes mostram a configuração inicial do Vitest e o teste local que fiz com `npm run test:coverage`. Os sete testes passaram. No GitHub Actions, `yarn test:coverage` roda o mesmo script do `package.json`.
+
+![Configuração inicial do Vitest com cobertura V8 e relatórios em texto, LCOV e JSON](evidence/capturas/07-pocapp-08-configuracao-vitest.png)
+
+![Terminal com sete testes aprovados e o relatório local de cobertura do Vitest](evidence/capturas/07-pocapp-09-testes-e-cobertura-local.png)
+
+No SonarQube, a análise de `pocapp` mostrou **93,0% de cobertura** e o Quality Gate aprovado nessa execução.
+
+![Projeto pocapp no SonarQube com 93 por cento de cobertura e Quality Gate aprovado](evidence/capturas/07-pocapp-10-cobertura-sonarqube.png)
+
+</details>
+
+#### Referências de consulta
+
+- [SonarSource — cobertura de testes para JavaScript e TypeScript](https://docs.sonarsource.com/sonarqube-server/analyzing-source-code/test-coverage/javascript-typescript-test-coverage)
+- [Baeldung — cobertura com SonarQube e JaCoCo em projetos Java](https://www.baeldung.com/sonarqube-jacoco-code-coverage)
+- [GitHub Marketplace — Coverage History Action](https://github.com/marketplace/actions/coverage-history-action)
+- [GitHub Marketplace — Test Coverage Annotations](https://github.com/marketplace/actions/test-coverage-annotations)
 
 ### Escolher os inputs do pipeline
 
