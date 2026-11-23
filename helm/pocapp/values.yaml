@@ -5,10 +5,10 @@ image:
   pullPolicy: IfNotPresent
   tag: "sha-bab7b74eadff"
 
-# O workflow com deploy_target=canary preenche a imagem e inicia com peso 0.
+# O chart calcula o peso da estável como 100 - 10.
 canary:
   enabled: true
-  weight: 0
+  weight: 10
   image:
     repository: "host.docker.internal:8081/poc/healthz-api"
     tag: "sha-308afbbaf799"
