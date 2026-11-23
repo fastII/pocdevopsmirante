@@ -125,7 +125,7 @@ kubectl --context minikube -n traefik port-forward --address localhost svc/traef
 Na execução registrada abaixo, usei `--restaurar-secrets --servir` com um perfil Minikube que já existia. Quando o terminal mostrou **Provisionamento concluído**, o script deixou os encaminhamentos abertos para acessar os serviços.
 
 <details>
-<summary>Ver a execução do script e os pods no K9s</summary>
+<summary>Ver a execução do script, os pods no K9s e o painel do Argo CD</summary>
 
 O script conferiu a revisão no GitHub e preparou o Minikube com o Metrics Server.
 
@@ -144,6 +144,10 @@ Ao final, o script listou os volumes e as rotas e anunciou os endereços locais.
 No K9s, abri a lista de pods por namespace. A captura mostra a POCAPP estável e a candidata em `Running`, junto com pods do Argo CD, Harbor, Kyverno e da observabilidade.
 
 ![K9s com os pods da POCAPP estável, da candidata e dos serviços da plataforma](evidence/capturas/01-minikube-09-pods-k9s.png)
+
+No painel do Argo CD, as 12 Applications estavam sincronizadas. A POCAPP estava entre as 11 com status `Healthy`. O Traefik estava sincronizado e ainda aparecia como `Progressing` no momento da captura.
+
+![Painel do Argo CD após o provisionamento com 12 Applications Synced, 11 Healthy e Traefik Progressing](evidence/capturas/02-argocd-07-applications-apos-provisionamento.png)
 
 </details>
 

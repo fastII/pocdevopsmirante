@@ -32,7 +32,7 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 ## 2. Argo CD e projetos
 
 <details>
-<summary>Ver 6 capturas</summary>
+<summary>Ver 7 capturas</summary>
 
 **19/11/2026 18:47:46** — Configuração inicial do repositório Helm do Argo CD.
 
@@ -57,6 +57,10 @@ As imagens estão agrupadas pela ordem do provisionamento, com data e hora do Ma
 **20/11/2026 18:09:33** — Upgrade do release Helm do Argo CD.
 
 ![Upgrade do release Helm do Argo CD.](capturas/02-argocd-06-upgrade-helm.png)
+
+**23/11/2026 08:15:01** — Painel do Argo CD após a reexecução do provisionamento. As 12 Applications estavam em `Synced`. A POCAPP e outras 10 estavam em `Healthy`. O Traefik aparecia como `Progressing`.
+
+![Applications da plataforma no Argo CD após a reexecução do script](capturas/02-argocd-07-applications-apos-provisionamento.png)
 
 </details>
 
