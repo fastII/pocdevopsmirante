@@ -2,12 +2,15 @@
 name: POCAPP - CI & CD
 
 on:
+  # Valida pushes nas branches selecionadas. Uma mudança isolada nos values
+  # segue direto para o Argo CD e não dispara outro build.
   push:
     branches:
       - main
       - 'feature/**'
     paths-ignore:
       - 'helm/pocapp/values.yaml'
+  # Exibe os inputs no botão Run workflow do GitHub Actions.
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -25,13 +28,17 @@ on:
           - minikube-local
         default: harbor
 
+# Define o acesso padrão do token do workflow ao repositório.
 permissions:
   contents: read
 
+# A entrega usa, em ordem, o input manual, a variável do repositório e o padrão.
+# A arquitetura vem da variável do repositório, com ARM64 como padrão.
 env:
   POCAPP_IMAGE_PLATFORM: ${{ vars.POCAPP_IMAGE_PLATFORM || 'linux/arm64' }}
   POCAPP_IMAGE_DELIVERY: ${{ inputs.image_delivery || vars.POCAPP_IMAGE_DELIVERY || 'harbor' }}
 
+# Agrupa execuções pela referência sem cancelar a que já está rodando.
 concurrency:
   group: pocapp-${{ github.ref }}
   cancel-in-progress: false
@@ -46,15 +53,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Baixa a revisão que disparou o workflow no runner de validação.
+      # Os testes e o Helm usam os arquivos desse mesmo commit.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Seleciona Node.js 22 para executar os testes e o servidor.
+      # A versão explícita evita depender do Node.js padrão do runner.
       - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
       # Habilita Yarn Classic no runner Ubuntu, sem depender de instalação global.
+      # Ativa o Yarn Classic 1.22.22 via Corepack.
+      # Exibe a versão ativa no log para facilitar o diagnóstico.
       - name: Preparar Yarn
         shell: bash
         run: |
@@ -64,16 +77,22 @@ jobs:
 
       # Instala as dependências declaradas em app/package.json.
       # O yarn.lock deve estar versionado para builds reproduzíveis.
+      # Instala as dependências na pasta app com o lockfile existente.
+      # O modo frozen-lockfile impede que o CI atualize o yarn.lock para resolver divergências.
       - name: Instalar dependências com Yarn
         working-directory: app
         run: yarn install --frozen-lockfile
 
       # Executa os testes Vitest e gera app/coverage/lcov.info.
+      # Executa o Vitest com coleta de cobertura e verifica os limiares configurados.
+      # O relatório LCOV gerado será consumido pelo SonarQube.
       - name: Testes automatizados e cobertura
         working-directory: app
         run: yarn test:coverage
 
       # Disponibiliza a cobertura ao job SonarQube, que roda em outro runner.
+      # Publica somente o LCOV como artefato para transferi-lo ao runner do SonarQube.
+      # A etapa falha se o relatório estiver ausente e o artefato fica disponível por sete dias.
       - name: Publicar relatório de cobertura
         uses: actions/upload-artifact@v4
         with:
@@ -82,14 +101,21 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Instala a versão fixa do Helm usada no lint e na renderização.
+      # Isso mantém a validação consistente entre execuções.
       - name: Instalar Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.17.3
 
+      # Confere se o JavaScript do servidor pode ser interpretado pelo Node.js.
+      # Essa checagem detecta erros de sintaxe sem iniciar a API.
       - name: Verificar sintaxe Node.js
         run: node --check app/src/server.js
 
+      # Inicia a API em segundo plano e aguarda uma resposta HTTP bem-sucedida em /healthz.
+      # Falha se o processo morrer ou se a resposta não trouxer status healthy e uma versão.
+      # O trap encerra o processo ao final, inclusive se o teste falhar.
       - name: Smoke test GET /healthz
         shell: bash
         run: |
@@ -138,9 +164,14 @@ jobs:
             console.log("Healthcheck OK:", d);
           '
 
+      # Executa o lint do chart para detectar problemas de estrutura e configuração.
+      # A verificação roda no runner sem instalar recursos no Kubernetes.
       - name: Validar Helm Chart
         run: helm lint ./helm/pocapp
 
+      # Renderiza os manifests para apps com os valores padrão e com um cenário de canary.
+      # A renderização do canary usa peso 10 e uma tag de exemplo.
+      # O teste exige arquivos não vazios nas duas renderizações.
       - name: Renderizar templates Helm
         run: |
           helm template pocapp ./helm/pocapp \
@@ -167,16 +198,22 @@ jobs:
       SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
     steps:
+      # Baixa a revisão no runner self-hosted com o histórico completo do Git.
+      # O scanner pode usar o histórico para informações de autoria e análise de mudanças.
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Seleciona Node.js 22 no runner que acessa o SonarQube.
+      # Cada job prepara seu próprio ambiente de ferramentas.
       - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
+      # Registra a arquitetura e identifica o executável e a versão do Node.js.
+      # Essas informações ajudam a diagnosticar diferenças no runner self-hosted.
       - name: Validar ambiente
         run: |
           echo "Arquitetura:"
@@ -186,6 +223,9 @@ jobs:
           which node
           node --version
 
+      # Respeita uma URL personalizada do SonarQube. Sem URL ou com a URL HTTPS local
+      # conhecida, abre um túnel em loopback até o Service do Minikube.
+      # Aguarda a API indicar UP e exporta a URL dinâmica para o scanner e o Quality Gate.
       - name: Configurar acesso ao SonarQube
         shell: bash
         run: |
@@ -220,12 +260,16 @@ jobs:
           exit 1
 
       # Recupera a cobertura gerada no job validate (runner Ubuntu).
+      # Baixa o artefato do job validate no diretório onde o scanner espera o LCOV.
+      # Isso permite analisar a cobertura produzida em outro runner.
       - name: Baixar relatório de cobertura
         uses: actions/download-artifact@v4
         with:
           name: pocapp-coverage
           path: app/coverage
 
+      # Envia o código de app/src e o LCOV ao projeto pocapp no SonarQube.
+      # O token de análise vem dos Secrets do GitHub Actions.
       - name: Analisar código no SonarQube
         uses: SonarSource/sonarqube-scan-action@v6.0.0
         with:
@@ -238,6 +282,8 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      # Consulta o resultado da análise usando o identificador salvo pelo scanner.
+      # Aguarda até 300 segundos pelo Quality Gate, cuja aprovação libera o build.
       - name: Aguardar Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
         with:
@@ -246,6 +292,8 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      # Fecha o port-forward se este job abriu um túnel local.
+      # A condição always executa a limpeza mesmo após falha de uma etapa anterior.
       - name: Encerrar acesso local ao SonarQube
         if: always()
         shell: bash
@@ -266,9 +314,13 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
 
     steps:
+      # Baixa a revisão que disparou o workflow no runner de build.
+      # O Docker usa a pasta app desse checkout como contexto.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Valida a arquitetura alvo e o modo de entrega antes do build.
+      # A imagem deve usar linux/amd64 ou linux/arm64 e seguir para Harbor ou Minikube local.
       - name: Verificar plataforma e destino da imagem
         shell: bash
         run: |
@@ -281,15 +333,20 @@ jobs:
             *) echo 'Defina POCAPP_IMAGE_DELIVERY como harbor ou minikube-local.' >&2; exit 1 ;;
           esac
 
+      # Habilita QEMU somente quando a imagem de destino é ARM64.
+      # A emulação permite construir para essa arquitetura no runner hospedado.
       - name: Preparar emulação ARM64
         if: env.POCAPP_IMAGE_PLATFORM == 'linux/arm64'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
+      # Configura o builder Buildx usado para construir para a plataforma selecionada.
       - name: Preparar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Monta uma tag rastreável com os 12 primeiros caracteres do SHA de origem.
+      # Publica a tag como output para o build e os jobs seguintes.
       - name: Definir tag da imagem
         id: meta
         shell: bash
@@ -301,6 +358,8 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Imagem: $TAG"
 
+      # Constrói a imagem na plataforma selecionada e a carrega no Docker do runner.
+      # O Trivy examina essa imagem local e o docker save exporta o mesmo artefato.
       - name: Build da imagem Docker
         env:
           TAG: ${{ steps.meta.outputs.tag }}
@@ -314,6 +373,8 @@ jobs:
             -t "healthz-api:$TAG" \
             ./app
 
+      # Gera um relatório de vulnerabilidades HIGH e CRITICAL em pacotes do SO e bibliotecas.
+      # Ignora achados sem correção disponível. O exit-code 0 torna os achados informativos.
       - name: Trivy - relatar HIGH/CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -324,12 +385,16 @@ jobs:
           vuln-type: 'os,library'
           severity: 'HIGH,CRITICAL'
 
+      # Empacota a imagem em um arquivo tar quando a execução está na main.
+      # O próximo runner recebe a imagem já construída, sem precisar repetir o build.
       - name: Exportar imagem para entrega
         if: github.ref == 'refs/heads/main'
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         run: docker save --output "$RUNNER_TEMP/pocapp-image.tar" "healthz-api:$TAG"
 
+      # Publica o tar para o job de entrega no runner self-hosted.
+      # O artefato fica disponível por sete dias e pode ser substituído em uma reexecução.
       - name: Enviar imagem como artefato
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
@@ -339,6 +404,7 @@ jobs:
           retention-days: 7
           overwrite: true
 
+  # A entrega roda apenas na main, no runner que alcança os serviços locais.
   publish:
     name: Entregar imagem ao Harbor ou ao Minikube
     needs: image
@@ -350,6 +416,9 @@ jobs:
     env:
       TAG: ${{ needs.image.outputs.tag }}
     steps:
+      # Define o nome da imagem que será gravado no GitOps.
+      # No Harbor valida o host e o projeto e monta registry/projeto/healthz-api.
+      # Na entrega local mantém apenas healthz-api, pois o artefato vai direto para o nó.
       - name: Definir referência da imagem
         id: reference
         env:
@@ -383,12 +452,16 @@ jobs:
             printf 'repository=healthz-api\n' >> "$GITHUB_OUTPUT"
           fi
 
+      # Recupera o tar do build em um diretório temporário associado à execução.
+      # A mesma imagem segue para importação no Minikube ou publicação no Harbor.
       - name: Baixar a imagem construída no GitHub
         uses: actions/download-artifact@v4
         with:
           name: pocapp-image
           path: ${{ runner.temp }}/pocapp-image-${{ github.run_id }}
 
+      # Confere primeiro se a arquitetura da imagem é compatível com o nó.
+      # Depois importa o tar para o perfil minikube e confirma que a tag está disponível no nó.
       - name: Importar imagem no Minikube
         if: env.POCAPP_IMAGE_DELIVERY == 'minikube-local'
         shell: bash
@@ -405,6 +478,8 @@ jobs:
             END { exit !found }
           '
 
+      # Carrega o tar no daemon Docker do runner self-hosted no modo Harbor.
+      # A inspeção verifica a presença da tag esperada antes de renomear e publicar.
       - name: Carregar imagem Docker para publicar no Harbor
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         shell: bash
@@ -413,6 +488,9 @@ jobs:
           docker load -i "$RUNNER_TEMP/pocapp-image-$GITHUB_RUN_ID/pocapp-image.tar"
           docker image inspect "healthz-api:${TAG}" > /dev/null
 
+      # Valida o túnel HTTP direto em 8081 quando o registry é host.docker.internal.
+      # Confere a resposta 401 com o endpoint de token esperado, testa que HTTPS
+      # não responde nesse túnel e verifica a configuração insecure-registries do Docker Desktop.
       - name: Verificar o túnel direto do Harbor local
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor' && steps.reference.outputs.registry == 'host.docker.internal:8081'
         shell: bash
@@ -432,6 +510,8 @@ jobs:
             exit 1
           fi
 
+      # Autentica o Docker no registry indicado para autorizar a publicação.
+      # As credenciais vêm dos Secrets do GitHub Actions.
       - name: Login no Harbor
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         uses: docker/login-action@v3
@@ -440,6 +520,8 @@ jobs:
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
+      # Aplica o nome completo do registry à imagem local sem reconstruí-la.
+      # Envia ao Harbor a mesma tag derivada da revisão de origem.
       - name: Publicar imagem no Harbor
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor'
         env:
@@ -454,6 +536,9 @@ jobs:
           docker tag "healthz-api:${TAG}" "${IMAGE}"
           docker push "${IMAGE}"
 
+      # Consulta se o projeto do Harbor local é público.
+      # Quando for público, executa o pull pelo runtime dentro do nó Minikube
+      # para testar o caminho que o Kubernetes usará antes de atualizar o Git.
       - name: Verificar pull da imagem pública no Minikube
         if: env.POCAPP_IMAGE_DELIVERY == 'harbor' && steps.reference.outputs.registry == 'host.docker.internal:8081'
         env:
@@ -471,6 +556,7 @@ jobs:
   # ============================================================
   # 4. GITOPS - ATUALIZAR HELM VALUES
   # ============================================================
+  # O Git só recebe a nova referência depois da entrega da imagem.
   gitops:
     name: GitOps - Atualizar imagem no Helm
     needs: publish
@@ -489,20 +575,28 @@ jobs:
       contents: write
 
     steps:
+      # Faz checkout de main, que é a branch acompanhada pelo Argo CD.
+      # Mantém as credenciais do checkout disponíveis para o push do bot.
       - name: Checkout da main
         uses: actions/checkout@v4
         with:
           ref: main
           persist-credentials: true
 
+      # Prepara o Python 3.12 para editar os values do Helm de forma estruturada.
       - name: Instalar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # Instala uma versão fixa do ruamel.yaml para editar o YAML preservando
+      # a estrutura e, sempre que possível, a apresentação do arquivo.
       - name: Instalar ruamel.yaml
         run: python -m pip install 'ruamel.yaml==0.18.10'
 
+      # Atualiza somente a referência da imagem no values.yaml, após a entrega.
+      # Recusa a alteração se já houver canary ativo. A candidata começa com peso zero.
+      # Na entrega local define IfNotPresent para usar a imagem disponível no nó.
       - name: Atualizar imagem no values.yaml
         env:
           REPOSITORY: ${{ needs.publish.outputs.repository }}
@@ -548,6 +642,8 @@ jobs:
           print("Imagem atualizada no Helm values.yaml")
           PY
 
+      # Adiciona apenas o values.yaml ao commit e faz push para main se houver alteração.
+      # Publica a revisão GitOps no output para rastrear o estado que o Argo CD vai ler.
       - name: Commit e push na main
         id: commit
         env:
@@ -573,6 +669,7 @@ jobs:
 
           printf 'revision=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+  # Resume inclusive falhas e etapas ignoradas, se a execução não for cancelada.
   summary:
     name: Resumo do pipeline
     if: ${{ !cancelled() }}
@@ -581,6 +678,9 @@ jobs:
     permissions: {}
 
     steps:
+      # Escreve o Summary da execução com o status de cada job e os outputs disponíveis.
+      # Registra separadamente a origem, a imagem entregue e a revisão GitOps.
+      # A saúde do rollout é confirmada no Argo CD, após o commit.
       - name: Registrar resultado da execução
         env:
           DEPLOY_TARGET: ${{ inputs.deploy_target || 'stable' }}

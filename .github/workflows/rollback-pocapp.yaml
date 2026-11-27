@@ -2,6 +2,7 @@
 name: Rollback POCAPP
 
 on:
+  # Exibe os inputs no botão Run workflow do GitHub Actions.
   workflow_dispatch:
     inputs:
       image_tag:
@@ -22,10 +23,13 @@ on:
           - Never
         default: manter
 
+# Define o acesso padrão do token do workflow ao repositório.
 permissions:
   contents: write
 
 jobs:
+  # O rollback roda na main e usa o mesmo grupo de concorrência da publicação
+  # GitOps para que os dois jobs não gravem em main ao mesmo tempo.
   rollback:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -34,12 +38,16 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      # Faz checkout de main para restaurar a referência no estado desejado atual.
+      # Mantém as credenciais do checkout disponíveis para publicar o commit do bot.
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: main
           persist-credentials: true
 
+      # Instala uma versão fixa do yq de Mike Farah no runner Ubuntu.
+      # A ferramenta permite consultar e editar campos do YAML sem substituições de texto.
       - name: Instalar yq
         run: |
           YQ_VERSION=v4.44.6
@@ -49,6 +57,9 @@ jobs:
           chmod +x /tmp/yq
           sudo mv /tmp/yq /usr/local/bin/yq
 
+      # Restaura a referência estável no values.yaml. A tag é obrigatória.
+      # Quando o repositório é omitido ou a política é manter, reaproveita os valores existentes.
+      # Valida as entradas e interrompe se houver um canary ativo, para preservar a sequência de promoção ou aborto.
       - name: Restaurar a referência da imagem estável
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
@@ -86,6 +97,8 @@ jobs:
             .image.pullPolicy = strenv(IMAGE_PULL_POLICY)' "$values"
           printf 'Imagem estável selecionada: %s:%s (%s)\n' "$IMAGE_REPOSITORY" "$IMAGE_TAG" "$IMAGE_PULL_POLICY"
 
+      # Publica em main somente quando há mudança no values.yaml.
+      # O Argo CD reconcilia a referência restaurada. Depois acompanhe o rollout e confirme a tag no /healthz.
       - name: Commit e push
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
